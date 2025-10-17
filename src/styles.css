@@ -8,12 +8,21 @@
   --sidebar-divider: rgba(2,6,23,0.04);
   --sidebar-text: oklch(0.4658 0.1562 255.5 / 1);
   --sidebar-muted: #6b7280;
-  --text: #e6eef8;
+  /* primary body text color (OKLCH with hex fallback) */
+  --text: oklch(.3908 .128 256 / 1); /* desired text color */
+  --text-fallback: #102033;
   --muted: #9aa8bb;
   --accent: #2dd4bf;
   --bubble-user: linear-gradient(180deg,#0ea5e9,#0369a1);
   --bubble-bot: rgba(255,255,255,0.03);
 }
+
+/* Global override: set chat panel to a near-white surface (not pure white) */
+.chat-window {
+  background: #f9f9f9 !important;
+  box-shadow: none !important;
+}
+
 
 [data-theme='light'] {
   --bg: #f6f7fb;
@@ -30,8 +39,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; background: var(--bg) !important; }
-body { overflow: hidden; }
+.html, body, #root { height: 100%; margin: 0; background: var(--bg) !important; }
+body { overflow: hidden; color: var(--text, var(--text-fallback)); }
 .app, .app-root { height: 100vh; min-height: 100vh; display: flex; background: var(--bg) !important; }
 
 .sidebar { flex: 0 0 340px !important; height: 100vh !important; min-height: 0; overflow: visible !important; display: flex !important; flex-direction: column !important; }
@@ -73,7 +82,7 @@ body { overflow: hidden; }
 .sidebar.collapsed { box-shadow: 2px 0 8px rgba(2,6,23,0.06) }
 
 /* Expanded sidebar (light surface) to match reference image */
-.sidebar:not(.collapsed) {
+.not-light-theme .sidebar:not(.collapsed), :not([data-theme='light']) .sidebar:not(.collapsed) {
   background: var(--sidebar-surface) !important;
   border-right: 1px solid var(--sidebar-divider) !important;
   color: var(--sidebar-text) !important;
@@ -87,6 +96,7 @@ body { overflow: hidden; }
 
 /* Search box style on expanded light sidebar */
 .sidebar:not(.collapsed) .search-inner { background: var(--sidebar-card); padding:10px 12px; border-radius:10px; border:1px solid rgba(30,115,232,0.06); height:40px; display:flex; align-items:center }
+.sidebar:not(.collapsed) .search-inner:focus-within { border-color: rgba(30,115,232,0.10); }
 .sidebar:not(.collapsed) .sidebar-search input { background:transparent; color:var(--sidebar-text); font-size:14px }
 
 /* thin separator lines under search and agents to match reference */
@@ -94,7 +104,7 @@ body { overflow: hidden; }
 .sidebar:not(.collapsed) .agents { border-bottom: 1px solid rgba(2,6,23,0.06); padding-bottom:12px }
 
 /* Agents list: light cards */
-.sidebar:not(.collapsed) .agent-item { background: var(--sidebar-card); color:var(--sidebar-text); box-shadow:none; padding:8px 10px; border-radius:10px; display:flex; align-items:center; gap:10px }
+.sidebar:not(.collapsed) .agent-item { background: transparent; color:var(--sidebar-text); box-shadow:none; padding:8px 10px; border-radius:10px; display:flex; align-items:center; gap:10px }
 .sidebar:not(.collapsed) .agent-item span { color:var(--accent); font-weight:500 }
 .sidebar:not(.collapsed) .agent-icon { color: var(--accent); background: transparent; width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-size:14px }
 
@@ -119,6 +129,71 @@ body { overflow: hidden; }
 .brand-row .left { display:flex; align-items:center; gap:8px; flex:0 0 auto }
 .brand-row .brand { flex: 0 1 auto; min-width:0 }
 .brand-row .top-actions { display:flex; align-items:center; gap:8px; flex:0 0 auto; white-space:nowrap }
+
+/* New layout helpers for centered brand with left/right controls */
+.brand-row { position:relative; padding:6px 4px }
+.brand-row .left-row { flex: 0 0 auto }
+.brand-row .brand-center { position:absolute; left:50%; transform:translateX(-50%); pointer-events:none }
+.brand-row .brand-center .brand { pointer-events:auto }
+.brand-row .right-row { flex: 0 0 auto }
+
+/* Two-row header layout */
+.brand-row .top-row, .brand-row .second-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:4px 6px }
+.brand-row .top-row .brand-left { display:flex; align-items:center; gap:8px }
+.brand-row .top-row .top-right { display:flex; align-items:center }
+.brand-row .second-row .back-left { display:flex; align-items:center }
+.brand-row .second-row .second-right { display:flex; align-items:center }
+
+/* Slightly reduce brand text weight on small screens */
+@media (max-width: 420px) {
+  .brand-text { font-size:14px }
+  .back-text { display:none }
+}
+
+/* Strong override: ensure the brand-row actually stacks into two rows and the
+   controls align to left/right as intended. This addresses cases where other
+   rules collapsed them into a single line. */
+html .sidebar .brand-row {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+  padding: 6px 8px !important;
+}
+html .sidebar .brand-row .top-row,
+html .sidebar .brand-row .second-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+}
+
+/* ensure the collapse button is aligned to the right in the top row */
+html .sidebar .brand-row .top-row .top-right { margin-left: auto !important }
+
+/* Ensure the back icon SVG uses currentColor and is visible in light/dark */
+html .sidebar .back-btn,
+html .sidebar .back-btn svg { color: var(--sidebar-muted) !important; stroke: currentColor !important; fill: none !important }
+html .sidebar .back-btn svg { width: 18px !important; height: 18px !important }
+
+
+.back-btn { display:inline-flex; align-items:center; gap:8px; color:var(--sidebar-muted); background:transparent; border:0; padding:6px; border-radius:8px }
+.back-btn .back-text { display:inline-block; color:var(--sidebar-muted); font-weight:600 }
+
+/* Back button theme overrides */
+.back-btn.light svg, .back-btn.light { color: #05243A !important; }
+.back-btn.dark svg, .back-btn.dark { color: #ffffff !important; }
+
+/* Ensure Pulse icon is visible in light mode (use currentColor in IconPulse) */
+html[data-theme='light'] .brand .pulse-icon svg { color: #05243A !important; stroke: currentColor !important }
+
+/* Disabled New chat button */
+.new-chat.bottom.disabled { opacity: 0.5; pointer-events: none; cursor: default }
+
+/* Auto-resize textarea base styles */
+.input-wrapper textarea { width:100%; resize:none; min-height:36px; max-height:400px; overflow:auto; padding:10px 12px; border-radius:10px; border:1px solid rgba(0,0,0,0.06); background:transparent }
+.input-wrapper textarea:focus { outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.06) }
 
 .brand { display:flex; align-items:center; gap:8px }
 .brand .brand-text { font-weight:800; font-size:18px; color:var(--accent); margin-left:2px }
@@ -206,7 +281,7 @@ body { overflow: hidden; }
 /* Disable old CSS pseudo tooltip (we use a floating tooltip appended to body) */
 .chat-title[data-tooltip]::after { display: none !important; }
 
-.chat-window { flex:1; display:flex; flex-direction:column; background:var(--panel); }
+.chat-window { flex:1; display:flex; flex-direction:column; background: linear-gradient(180deg,#f7fbff,#eef6fb); }
 .chat-window.empty { display:flex; align-items:center; justify-content:center; color:var(--muted) }
 .chat-header { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.03); display:flex; align-items:center; gap:8px }
 .chat-title-input { width:60%; padding:10px 12px; border-radius:12px; border:0; background:var(--card); color:var(--text); font-weight:700 }
@@ -215,23 +290,94 @@ body { overflow: hidden; }
 .impersonate input { padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.06); background:transparent; color:var(--text) }
 .impersonate button { padding:8px 10px; border-radius:8px; background:var(--accent); color:white; border:none; cursor:pointer }
 
-.messages { padding:12px; overflow:auto; flex:1; display:flex; flex-direction:column; gap:10px; min-height:0 }
+/* Messages column: center and constrain width */
+.messages { padding:20px 16px; overflow:auto; flex:1; display:flex; flex-direction:column; gap:20px; min-height:0; width:100%; max-width:820px; box-sizing:border-box }
+.content-area .messages { margin: 0 auto }
   .sidebar { flex: 0 0 340px !important; height: 100vh !important; min-height: 0; overflow: visible !important; display: flex !important; flex-direction: column !important; }
-.message { max-width:70%; padding:10px; border-radius:12px; }
-.message.user { align-self:flex-end; background:var(--bubble-user); color:white; box-shadow:0 8px 24px rgba(2,6,23,0.3); border-radius:14px }
-.message.bot { align-self:flex-start; background:var(--bubble-bot); color:var(--text); display:flex; flex-direction:column; gap:10px; border:1px solid rgba(255,255,255,0.03); box-shadow: 0 6px 18px rgba(2,6,23,0.06); border-radius:12px }
-.message-body { white-space:pre-wrap }
-.message-actions { display:flex; gap:8px; align-items:center }
+.message {
+  /* let individual messages size to their content by default; bot messages explicitly fill the
+     messages column below via .message.bot { width: 100% } */
+  width: auto;
+  max-width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  display: block;
+  word-break: break-word;
+  font-size: 15px;
+  line-height: 1.45;
+  box-sizing: border-box;
+  min-width: 0;
+  white-space: normal;
+}
+.message.user {
+  /* shrink-wrap to text, but allow wrapping for long content */
+  display: inline-block;
+  width: auto;
+  max-width: 60%;
+  align-self: flex-end;
+  margin-left: 16px;
+  margin-right: 28px;
+  background: linear-gradient(90deg,#2563eb,#1e40af);
+  color: white;
+  box-shadow: 0 12px 36px rgba(3,105,161,0.18);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 14px;
+  white-space: normal;
+}
+.message.bot {
+  /* bot messages are full-width within the centered messages column */
+  display: block;
+  width: 100%;
+  align-self: flex-start;
+  margin-right: 16px;
+  margin-left: 0;
+  background: transparent;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: none;
+  box-shadow: none;
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+.message-body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; min-width: 0 }
+
+/* Align actions inside bubbles: bot actions start from left, user actions aligned to right */
+.message.bot .message-actions { justify-content:flex-start }
+.message.user .message-actions { justify-content:flex-end }
+.message-actions { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap }
   .time-category { margin:0 !important; }
   .time-category h3 { margin:0 !important; font-size:11px !important; color:var(--muted); padding:0 !important }
   .chat-history { display:flex; flex-direction:column; gap:0 !important }
   .chat-history .time-category { padding:0 !important; border-bottom: none !important }
 
-.icon-btn { background:transparent; border:0; color:var(--muted); padding:6px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; position:relative; font-size: 1.6rem; }
-.icon-btn:hover { background:rgba(255,255,255,0.03); color:var(--text); width:48px; height:48px; }
+.icon-btn { background:transparent; border:0; color:var(--muted); padding:6px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; position:relative; font-size: 1.4rem; }
+.icon-btn:hover { background:rgba(2,6,23,0.03); color:var(--text); }
 .icon-btn.active { background:rgba(45,212,191,0.08); color:var(--text) }
 .icon-btn.copied { background:rgba(96,165,250,0.12); color:var(--text) }
 .copied-label { position:absolute; top:-34px; left:50%; transform:translateX(-50%); background:var(--panel); color:var(--text); padding:6px 8px; border-radius:8px; font-size:12px; border:1px solid rgba(255,255,255,0.03); white-space:nowrap }
+
+/* Hide native scrollbars for a cleaner Gemini-like look */
+.messages::-webkit-scrollbar { width: 0; height: 0 }
+.messages { -ms-overflow-style: none; scrollbar-width: none }
+
+/* Remove bot avatar rules (we render simple cards without left icon) */
+.chat-window .messages .message.bot .avatar { display:none !important }
+
+/* Composer (centered rounded pill) */
+.input-area { padding:22px 18px; border-top: none; background: transparent; display:flex; justify-content:center }
+.input-wrapper { display:flex; align-items:center; gap:12px; background:#ffffff; border-radius:28px; padding:12px 18px; border:1px solid rgba(2,6,23,0.06); box-shadow: 0 12px 40px rgba(16,24,40,0.06); width: 760px; max-width: calc(100% - 48px) }
+/* on focus, change composer border color to blue (matching search focus) */
+.input-wrapper:focus-within { border-color: #2563eb !important; }
+.input-wrapper input { flex:1; border:0; outline:none; padding:12px 12px; font-size:16px; background:transparent; color:var(--text) }
+.input-wrapper .mic-btn, .input-wrapper .send-btn { background:transparent; border:0; width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; cursor:pointer; color:var(--muted); padding:6px }
+.input-wrapper .send-btn { color:var(--accent); }
+.input-wrapper .mic-btn:hover, .input-wrapper .send-btn:hover { background: rgba(2,6,23,0.02) }
+
+/* Make user message bubble style closer to Gemini (smaller rounded pill) */
 
 .composer { display:flex; gap:6px; padding:10px; border-top:1px solid rgba(255,255,255,0.03); align-items:center }
 .composer-input { flex:1; padding:10px 12px; border-radius:999px; border:0; background:var(--card); color:var(--text); outline:none }
@@ -250,7 +396,7 @@ body { overflow: hidden; }
 
 /* Content area inside chat window: scrollable main content */
 .chat-window { display:flex; flex-direction:column; flex:1; min-height:0; }
-.content-area { flex:1; overflow:auto; padding:12px; min-height:0; }
+.content-area { flex:1; overflow: visible; padding:24px 32px; min-height:0; display:flex; justify-content:center }
 .no-messages { color:var(--muted); padding:12px }
 
 /* Input area fixed at bottom inside chat window layout */
@@ -305,8 +451,8 @@ body { overflow: hidden; }
 .chat-item:hover { background: rgba(255,255,255,0.03) }
 
 /* Message bubble polish */
-.message.user { background: linear-gradient(180deg,#0ea5e9,#0369a1); color:white; box-shadow:0 12px 36px rgba(3,105,161,0.18); border-radius:14px }
-.message.bot { background: rgba(255,255,255,0.03); color:var(--text); border:1px solid rgba(255,255,255,0.03); box-shadow: 0 6px 18px rgba(2,6,23,0.06); border-radius:12px }
+/* unified user bubble style defined above */
+/* default bot bubble styles are defined later to ensure consistent white card appearance */
 
 /* Composer tweaks */
 .composer { padding:18px; gap:10px }
@@ -416,8 +562,8 @@ body { overflow: hidden; }
 .mic-btn { width:40px; height:40px; border-radius:999px; border:1px solid rgba(255,255,255,0.06); background:transparent; color:var(--text); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:1rem }
 .mic-btn:hover { background: rgba(255,255,255,0.02) }
 
-.send-btn { padding:8px 10px; border-radius:999px; background: linear-gradient(90deg,var(--accent),#60a5fa); border:none; color:white; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:1.05rem; box-shadow: 0 8px 24px rgba(2,6,23,0.12) }
-.send-btn:hover { transform:translateY(-1px); box-shadow: 0 10px 30px rgba(2,6,23,0.14) }
+.send-btn { padding:8px 10px; border-radius:999px; background: transparent; border: none; color: inherit; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:1.05rem; box-shadow: none }
+.send-btn:hover { transform: none; box-shadow: none; background: rgba(2,6,23,0.03) }
 
 /* Strong overrides to ensure grouped history is scrollable and doesn't overlap */
 .aside.sidebar > .scrollable-area {
@@ -503,9 +649,9 @@ body { overflow: hidden; }
 [data-theme='light'] .back-with-text .back-text { color:#374151 }
 
 /* Light theme: ensure bot responses are readable and panel is light */
-[data-theme='light'] .message.bot { background: #f3f4f6 !important; color: #0b1220 !important; border: 1px solid #e6eef8 !important }
-[data-theme='light'] .message.bot .message-body { color: #0b1220 !important }
-[data-theme='light'] .chat-window { background: linear-gradient(180deg,#ffffff,#f8fafc) !important }
+[data-theme='light'] .message.bot { color: var(--text) !important }
+[data-theme='light'] .message.bot .message-body { color: var(--text) !important }
+[data-theme='light'] .chat-window { background: linear-gradient(180deg,#fbfdff,#f4f7fb) !important; box-shadow: none !important }
 
 /* Light theme: New chat button uses navy blue */
 [data-theme='light'] .new-chat.bottom { background: #0b3d91 !important; color: #ffffff !important; box-shadow: 0 6px 18px rgba(11,61,145,0.12) }
@@ -600,6 +746,111 @@ body { overflow: hidden; }
   box-shadow: inset -8px 0 30px rgba(0, 0, 0, 0.1) !important;
 }
 
+/* Lightweight search visuals for left sidebar (both themes)
+   These high-specificity rules force a very subtle, low-contrast appearance
+   for the search box border, icon and input text so it reads as 'lightweight'. */
+
+/* Dark mode: subtle off-white border and text/icon (restored) */
+html:not([data-theme='light']) .sidebar:not(.collapsed) .sidebar-search .search-inner {
+  background: transparent !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+}
+html:not([data-theme='light']) .sidebar:not(.collapsed) .sidebar-search .search-inner .search-icon,
+html:not([data-theme='light']) .sidebar:not(.collapsed) .sidebar-search .search-inner input {
+  color: rgba(255,255,255,0.58) !important;
+}
+html:not([data-theme='light']) .sidebar:not(.collapsed) .sidebar-search .search-inner input::placeholder {
+  color: rgba(255,255,255,0.36) !important;
+  opacity: 1 !important;
+}
+
+/* (cleaned) Light-mode sidebar search visuals consolidated later in the file */
+
+/* Keep focus appearance equally subtle (no large jump in contrast) */
+/* Focus: light theme uses OKLCH; dark theme uses a slightly stronger faint white */
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner:focus-within {
+  border-color: rgba(2,6,23,0.12) !important; /* stronger but not harsh */
+}
+html:not([data-theme='light']) .sidebar:not(.collapsed) .sidebar-search .search-inner:focus-within {
+  border-color: rgba(255,255,255,0.18) !important; /* visible on dark bg */
+}
+
+
+/* Ensure the chat composer input always shows a visible border and the mic/send
+   icons use the same color as that border. We use --accent so the color adapts
+   to the active theme (light/dark). These high-specificity rules are placed
+   at the end of the file to override earlier duplicated selectors. */
+.chat-window .input-wrapper {
+  /* keep a constant visible border even when not focused; use the preferred
+     light-mode text color so mic/send match light-mode visuals in dark mode */
+  border: 1px solid #102033 !important; /* hex fallback */
+  border: 1px solid oklch(.3908 .128 256 / 1) !important;
+  box-shadow: 0 8px 24px rgba(16,24,40,0.04) !important;
+}
+
+/* FINAL OVERRIDE: Force light-mode sidebar search to start with a light border,
+   keep icon/text in the OKLCH color constant, and darken only the border on
+   focus. This block intentionally uses very specific selectors and !important
+   and is placed at the end so it overrides earlier rules (including the
+   earlier blue focus rule). */
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner {
+  background: transparent !important;
+  border: 1px solid rgba(2,6,23,0.04) !important; /* initial light border */
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+}
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner .search-icon,
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner input {
+  color: oklch(.928 .0359 250.6 / 1) !important; /* constant icon/text color */
+}
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner input::placeholder {
+  color: oklch(.928 .0359 250.6 / 1) !important;
+  opacity: 0.86 !important;
+}
+/* On focus (click) in light mode make the border darker; icon/text remain constant */
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner:focus-within {
+  border-color: rgba(2,6,23,0.16) !important; /* stronger dark border on click */
+}
+
+
+.chat-window .input-wrapper:focus-within {
+  /* same border on focus so it never changes */
+  border-color: oklch(.3908 .128 256 / 1) !important;
+}
+
+.chat-window .input-wrapper input {
+  /* ensure caret matches the chosen color and input remains readable */
+  caret-color: oklch(.3908 .128 256 / 1) !important;
+  color: var(--text) !important;
+}
+
+/* make mic and send icons the same color as the light-mode input color
+   so they read consistently across themes */
+.chat-window .input-wrapper .mic-btn,
+.chat-window .input-wrapper .send-btn {
+  color: #102033 !important; /* fallback */
+  color: oklch(.3908 .128 256 / 1) !important;
+  /* ensure icons don't get a different border/background from earlier rules */
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+/* keep hover background subtle but keep the icon color stable */
+.chat-window .input-wrapper .mic-btn:hover,
+.chat-window .input-wrapper .send-btn:hover {
+  background: rgba(2,6,23,0.03) !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+}
+
+/* For light theme ensure the same rule still applies (higher specificity) */
+html[data-theme='light'] .chat-window .input-wrapper {
+  border: 1px solid #102033 !important;
+  border: 1px solid oklch(.3908 .128 256 / 1) !important;
+}
+
+
 [data-theme='light'] .chat-window {
   background: linear-gradient(180deg, #ffffff, #e6eef8) !important;
   box-shadow: inset 0 -8px 30px rgba(0, 0, 0, 0.1) !important;
@@ -616,17 +867,110 @@ body { overflow: hidden; }
   transition: width .18s ease, padding .18s ease;
 }
 
+/* Defensive final fallback: enforce OKLCH + hex fallback for light-mode sidebar search
+   This is placed at the absolute end so it wins over any earlier focus rules. */
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner {
+  border: 1px solid #102033 !important; /* fallback */
+  border: 1px solid oklch(.928 .0359 250.6 / 1) !important;
+}
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner .search-icon,
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner input {
+  color: #102033 !important;
+  color: oklch(.928 .0359 250.6 / 1) !important;
+}
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner input::placeholder {
+  color: #102033 !important;
+  color: oklch(.928 .0359 250.6 / 1) !important;
+  opacity: 0.86 !important;
+}
+
+
 [data-theme='light'] .sidebar:not(.collapsed) .brand-row { display:flex; align-items:center; gap:8px; padding-bottom:4px }
 [data-theme='light'] .sidebar:not(.collapsed) .pulse-icon { width:36px; height:36px; border-radius:8px; background: linear-gradient(90deg,#60a5fa,#34d399); box-shadow:none }
 [data-theme='light'] .sidebar:not(.collapsed) .brand-title { color:#071428; font-weight:800; margin-left:6px; font-size:15px }
 
 [data-theme='light'] .sidebar:not(.collapsed) .sidebar-search { margin-top:8px }
-[data-theme='light'] .sidebar:not(.collapsed) .search-inner { background:#f5f7fa; border:1px solid #eef2f7; padding:10px 12px; border-radius:10px }
-[data-theme='light'] .sidebar:not(.collapsed) .search-inner .search-icon { color:#9aa8bb }
-[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search input { color:#0b1220 }
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner {
+  /* keep search background transparent in light mode so panel surface shows through */
+  background: transparent !important;
+  /* fallback border color and OKLCH preferred color for search box border */
+  border: 1px solid #102033;
+  border: 1px solid oklch(.3908 .128 256 / 1);
+  padding:10px 12px;
+  border-radius:10px;
+}
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner .search-icon {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+}
+[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search input {
+  /* fallback text color and OKLCH preferred color for input text */
+  color: #102033;
+  color: oklch(.3908 .128 256 / 1);
+}
+
+/* Strong overrides: ensure light-mode search border and input color win (including focus) */
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner,
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner:focus-within {
+  /* hex fallback for older browsers */
+  border: 1px solid #102033 !important;
+  border: 1px solid oklch(.3908 .128 256 / 1) !important;
+}
+
+[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search input {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+}
+
+/* Final high-specificity enforcement for light-mode search input and placeholder */
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner input,
+[data-theme='light'] .sidebar .search-inner input,
+[data-theme='light'] .sidebar .sidebar-search input,
+[data-theme='light'] .sidebar input {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+  caret-color: oklch(.3908 .128 256 / 1) !important;
+}
+
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner input::placeholder,
+[data-theme='light'] .sidebar .search-inner input::placeholder,
+[data-theme='light'] .sidebar .sidebar-search input::placeholder {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+  opacity: 1 !important;
+}
+
+/* Ensure the search-inner border is always visible in light mode (not only on focus/typing) */
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner {
+  background: #f5f7fa !important;
+  border-style: solid !important;
+  border-width: 1px !important;
+  border-color: oklch(.3908 .128 256 / 1) !important;
+}
+
+/* FINAL: very high-specificity override for left-sidebar search box only (light mode)
+   Targets only the sidebar search area so chat-window inputs are unaffected. */
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner {
+  /* keep search background transparent in light mode */
+  background: transparent !important;
+  border: 1px solid #102033 !important; /* hex fallback */
+  border: 1px solid oklch(.3908 .128 256 / 1) !important;
+}
+
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner input {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+  caret-color: oklch(.3908 .128 256 / 1) !important;
+}
+
+html[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search .search-inner input::placeholder {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+  opacity: 1 !important;
+}
 
 [data-theme='light'] .sidebar:not(.collapsed) .agents { margin-top:8px }
-[data-theme='light'] .sidebar:not(.collapsed) .agent-item { background:#f8fafc; border-radius:8px; padding:6px 8px; color:#0b1220; font-size:13px; font-weight:500 }
+[data-theme='light'] .sidebar:not(.collapsed) .agent-item { background: transparent; border-radius:8px; padding:6px 8px; color:#0b1220; font-size:13px; font-weight:500 }
 [data-theme='light'] .sidebar:not(.collapsed) .agent-icon { color:#2563eb }
 
 [data-theme='light'] .sidebar:not(.collapsed) .time-category h3 { color:#6b7280; font-weight:700; margin:0; font-size:11px }
@@ -721,19 +1065,24 @@ body { overflow: hidden; }
 }
 
 /* Light mode chat window background */
-[data-theme='light'] .chat-window {
-  background: #fbfdff !important;
-  box-shadow: none !important;
-}
+[data-theme='light'] .chat-window { background: linear-gradient(180deg,#fbfdff,#f4f7fb) !important; box-shadow: none !important }
 
 /* Light-mode message styles */
 [data-theme='light'] .messages { background: transparent; }
-[data-theme='light'] .message.bot { background: #ffffff; border: 1px solid rgba(2,6,23,0.04); color: var(--sidebar-text); box-shadow: 0 4px 14px rgba(16,24,40,0.04); padding:12px; border-radius:12px }
-[data-theme='light'] .message.user { background: linear-gradient(90deg,#2563eb,#1e40af); color: white; padding:12px; border-radius:14px }
+[data-theme='light'] .message.bot { background: transparent !important; border: none !important; box-shadow: none !important; color: var(--text) !important; padding:12px; border-radius:12px }
+[data-theme='light'] .message.user {
+  /* translucent OKLCH background with rgba fallback; only for light theme */
+  background: rgba(2,6,23,0.04);
+  background: oklch(0 0 0 / .08);
+  color: var(--text);
+  box-shadow: 0 8px 20px rgba(2,6,23,0.06);
+  padding:12px;
+  border-radius:14px;
+}
 
 /* Composer input with embedded icons */
 .input-area { padding:18px; border-top: 1px solid rgba(2,6,23,0.04); background: transparent; display:flex; justify-content:center }
-.input-wrapper { display:flex; align-items:center; gap:8px; background:#fff; border-radius:16px; padding:10px 14px; border:1px solid rgba(2,6,23,0.04); box-shadow: 0 8px 24px rgba(16,24,40,0.04); width: 720px; max-width: calc(100% - 48px) }
+.input-wrapper { display:flex; align-items:center; gap:8px; background:#fff; border-radius:16px; padding:10px 14px; border:1px solid rgba(2,6,23,0.04); box-shadow: 0 8px 24px rgba(16,24,40,0.04); width: 720px; max-width: calc(100% - 48px); margin: 0 auto }
 .input-wrapper input { flex:1; border:0; outline:none; padding:12px 12px; font-size:16px; background:transparent }
 .input-wrapper .mic-btn, .input-wrapper .send-btn { background:transparent; border:0; width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; cursor:pointer; color:var(--sidebar-text); padding:6px }
 .input-wrapper .send-btn { background: transparent; color:var(--sidebar-text); box-shadow:none }
@@ -761,9 +1110,37 @@ body { overflow: hidden; }
 }
 
 /* Chat window background for light mode */
-[data-theme='light'] .chat-window {
-  background: linear-gradient(180deg, #ffffff, #e6eef8) !important;
-  box-shadow: inset 0 -8px 30px rgba(0, 0, 0, 0.1) !important;
+[data-theme='light'] .chat-window { background: linear-gradient(180deg,#fbfdff,#f4f7fb) !important; box-shadow: none !important }
+
+/* Removed redundant Gemini-specific overrides. The unified message and composer
+   styles earlier in this file provide the desired look (white bot cards, right-aligned
+   user bubbles, centered composer). This section neutralizes any leftover
+   avatar or left-action rules to avoid conflicts. */
+
+/* Ensure messages stack and fill the content area so long replies are visible */
+.chat-window .messages { display:flex; flex-direction:column; gap:20px; align-items:stretch }
+
+/* Hide any leftover avatar elements and left-action toolkits */
+.chat-window .messages .message.bot .avatar { display:none !important }
+.input-wrapper .left-actions, .input-wrapper .left-actions .tool-btn { display:none !important }
+
+/* Make sure the send button in the composer is icon-only and neutral */
+.input-wrapper .send-btn { background: transparent !important; color: var(--accent) !important; box-shadow:none !important }
+
+/* ensure messages column aligns with composer width */
+.content-area { display:flex; justify-content:center }
+.content-area .messages { max-width:760px; width:100%; box-sizing:border-box }
+
+/* Dark-mode tweaks: keep light theme untouched. Use :not([data-theme='light']) to target
+   dark appearance when no data-theme=light attribute is present. */
+:not([data-theme='light']) .message.bot .message-body {
+  color: #ffffff !important;
+}
+
+:not([data-theme='light']) .sidebar:not(.collapsed) {
+  /* slightly darker sidebar surface than the chat window to create visual separation */
+  background: linear-gradient(180deg,#041018,#071428) !important;
+  border-right: 1px solid rgba(255,255,255,0.02) !important;
 }
 
 /* Align back and switch buttons */
@@ -815,6 +1192,29 @@ body { overflow: hidden; }
   font-size: 20px;
   font-weight: 700;
 }
+
+/* Chat window header title: use a clear UI font and theme-aware color.
+   Light mode: dark navy blue. Dark mode: white. High-specificity rules
+   to win over earlier duplicated selectors. */
+html .chat-window .header h2 {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  font-weight: 750 !important;
+  font-size: 22px !important;
+  letter-spacing: 0.1px !important;
+}
+
+/* Light theme: slightly adjusted navy blue title */
+html[data-theme='light'] .chat-window .header h2,
+[data-theme='light'] .chat-window .header h2 {
+  color: #05243A !important; /* adjusted dark navy */
+}
+
+/* Dark theme: white title */
+html:not([data-theme='light']) .chat-window .header h2,
+:not([data-theme='light']) .chat-window .header h2 {
+  color: #ffffff !important;
+}
+
 
 /* Ensure chat header uses flex layout and space for impersonate controls */
 .chat-window .header { display:flex; align-items:center; justify-content:space-between; padding:18px 20px; position:sticky; top:0; z-index:5; background:transparent; }
@@ -900,7 +1300,36 @@ body { overflow: hidden; }
 
 /* Keep impersonate area anchored to right within header */
 .chat-window .header { position: relative; }
+
+/* Apply requested OKLCH backgrounds and subtle shadows */
+.chat-window {
+  /* main chat surface using the requested OKLCH color */
+  /* fallback hex for older browsers */
+  background: #f7fbff; /* fallback */
+  background: oklch(.3908 .128 256 / 1);
+  box-shadow: 0 10px 30px rgba(2,6,23,0.08), inset 0 1px 0 rgba(255,255,255,0.02);
+  color: var(--text);
+}
+
+.sidebar:not(.collapsed) {
+  /* left sidebar surface using a light neutral OKLCH as requested (L=0 is black; here using L=.84 for contrast)
+     note: the user asked for oklch(from oklch(0 0 0 / 1) l c h / .84) — interpreted as L=.84 with same chroma/hue 0 */
+  /* fallback hex for older browsers */
+  background: #f6f7fb !important;
+  background: oklch(.84 0 0 / 1) !important;
+  border-right: 1px solid rgba(2,6,23,0.04) !important;
+  box-shadow: inset -6px 0 12px rgba(2,6,23,0.02);
+}
 .chat-window .header .impersonate { margin-left: auto; }
+
+/* Response text color: default for dark mode (white), explicitly black in light mode */
+.message.bot, .message.bot .message-body {
+  color: #ffffff;
+}
+
+[data-theme='light'] .message.bot, [data-theme='light'] .message.bot .message-body {
+  color: #000000 !important;
+}
 
 /* small screens adjust */
 @media (max-width: 900px) {
@@ -911,3 +1340,158 @@ body { overflow: hidden; }
 @media (max-height: 800px) {
   .chat-list, .chat-history { max-height: calc(100vh - 300px); }
 }
+
+/* Ensure left sidebar is pure white in light mode only */
+[data-theme='light'] .sidebar:not(.collapsed) {
+  background: #ffffff !important;
+  border-right: 1px solid rgba(2,6,23,0.06) !important;
+  box-shadow: none !important;
+}
+
+/* Light-mode: set sidebar text color (including agent names) to requested OKLCH with a hex fallback.
+   This only affects light mode and will not change dark mode styling. */
+[data-theme='light'] .sidebar,
+[data-theme='light'] .sidebar .brand-title,
+[data-theme='light'] .sidebar .chat-item,
+[data-theme='light'] .sidebar .chat-title-text,
+[data-theme='light'] .sidebar .agent-item,
+[data-theme='light'] .sidebar .agent-item > span:last-child,
+[data-theme='light'] .sidebar .agent-icon,
+[data-theme='light'] .sidebar .menu-btn,
+[data-theme='light'] .sidebar .icon-only,
+[data-theme='light'] .sidebar .sidebar-search input {
+  /* hex fallback for older browsers */
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+}
+
+/* Make agent name use the same color as chat-history titles in light mode */
+[data-theme='light'] .sidebar:not(.collapsed) .agent-item > span:last-child {
+  /* fallback hex for older browsers */
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+}
+
+/* Light-mode (collapsed) — ensure icons are visible by using the requested OKLCH color */
+[data-theme='light'] .sidebar.collapsed .icon-only,
+[data-theme='light'] .sidebar.collapsed .collapse-toggle,
+[data-theme='light'] .sidebar.collapsed .back-btn,
+[data-theme='light'] .sidebar.collapsed .search-icon,
+[data-theme='light'] .sidebar.collapsed .menu-btn,
+[data-theme='light'] .sidebar.collapsed .chat-icon {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+}
+
+/* FINAL override for light mode sidebar text to ensure it wins over other rules */
+[data-theme='light'] .sidebar:not(.collapsed) .chat-item,
+[data-theme='light'] .sidebar:not(.collapsed) .chat-title-text,
+[data-theme='light'] .sidebar:not(.collapsed) .agent-item,
+[data-theme='light'] .sidebar:not(.collapsed) .agent-item > span,
+[data-theme='light'] .sidebar:not(.collapsed) .agent-icon,
+[data-theme='light'] .sidebar:not(.collapsed) .menu-btn,
+[data-theme='light'] .sidebar:not(.collapsed) .icon-only,
+[data-theme='light'] .sidebar:not(.collapsed) .sidebar-search input {
+  color: #102033 !important;
+  color: oklch(.3908 .128 256 / 1) !important;
+}
+
+/* Make all sidebar text white in dark mode only; do not affect light mode */
+:not([data-theme='light']) .sidebar,
+:not([data-theme='light']) .sidebar .brand-title,
+:not([data-theme='light']) .sidebar .chat-item,
+:not([data-theme='light']) .sidebar .chat-title-text,
+:not([data-theme='light']) .sidebar .agent-item,
+:not([data-theme='light']) .sidebar .sidebar-search input,
+:not([data-theme='light']) .sidebar .search-icon,
+:not([data-theme='light']) .sidebar .menu-btn,
+:not([data-theme='light']) .sidebar .icon-only {
+  color: #ffffff !important;
+}
+
+/* Ensure placeholders and input text inside sidebar are readable in dark mode */
+:not([data-theme='light']) .sidebar input,
+:not([data-theme='light']) .sidebar input::placeholder {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* Dark-mode only: make the sidebar search box a darker surface so white text is readable */
+:not([data-theme='light']) .sidebar:not(.collapsed) .search-inner {
+  background: rgba(255,255,255,0.03) !important; /* subtle dark surface */
+  /* softer semi-transparent white border for dark mode */
+  border: 1px solid rgba(255,255,255,0.18) !important;
+}
+
+/* Dark mode: make search box border clearly white for contrast */
+:not([data-theme='light']) .sidebar:not(.collapsed) .search-inner {
+  border-color: #ffffff !important;
+}
+
+:not([data-theme='light']) .sidebar:not(.collapsed) .sidebar-search input {
+  color: #ffffff !important;
+}
+
+/* Ensure specific agent name span uses white in dark mode while keeping accent for highlighted part */
+:not([data-theme='light']) .sidebar .agent-item { color: #ffffff !important; }
+:not([data-theme='light']) .sidebar .agent-item > span:last-child { color: #ffffff !important; font-weight:500 }
+
+/* Final: enforce pure white left sidebar background in light mode only.
+   This is intentionally placed at the end and uses high-specificity selectors
+   so it overrides earlier duplicate rules without touching dark mode. */
+html[data-theme='light'] .sidebar,
+html[data-theme='light'] .sidebar:not(.collapsed),
+[data-theme='light'] .sidebar,
+[data-theme='light'] .sidebar:not(.collapsed) {
+  background: #ffffff !important;
+  box-shadow: none !important;
+  border-right: 1px solid rgba(2,6,23,0.06) !important;
+}
+
+/* Consolidated theme block (light/dark) - keeps key theme rules in one place
+   to reduce duplication and make future edits simpler. This covers sidebar
+   surface, search-inner defaults, and chat header title color. */
+
+
+/* Light theme consolidated rules */
+[data-theme='light'] {
+  --sidebar-bg: linear-gradient(180deg,#ffffff,#f8fafc);
+  --sidebar-text-color: #102033;
+  --sidebar-border: rgba(2,6,23,0.06);
+}
+
+[data-theme='light'] .sidebar:not(.collapsed) {
+  background: var(--sidebar-bg) !important;
+  color: var(--sidebar-text-color) !important;
+  border-right: 1px solid var(--sidebar-border) !important;
+}
+
+[data-theme='light'] .sidebar:not(.collapsed) .search-inner {
+  background: transparent !important;
+  border: 1px solid #102033 !important; /* fallback */
+  color: #102033 !important;
+}
+
+[data-theme='light'] .chat-window .header h2 {
+  color: #071428 !important; /* dark navy for titles in light mode */
+}
+
+/* Dark theme consolidated rules */
+:not([data-theme='light']) .sidebar:not(.collapsed) {
+  background: linear-gradient(180deg,#041018,#071428) !important;
+  color: #ffffff !important;
+  border-right: 1px solid rgba(255,255,255,0.02) !important;
+}
+
+:not([data-theme='light']) .sidebar:not(.collapsed) .search-inner {
+  background: rgba(255,255,255,0.03) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  color: #ffffff !important;
+}
+
+:not([data-theme='light']) .chat-window .header h2 {
+  color: #ffffff !important;
+}
+
+
+

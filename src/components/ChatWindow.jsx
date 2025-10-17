@@ -16,15 +16,15 @@ function BotMessage({ msg, onCopy, onDislike, onLike, onReload, state }) {
           {state.copied === msg.id ? <CopyFilled /> : <CopyRegular />}
           {state.copied === msg.id && <span className="copied-label" aria-hidden>Copied</span>}
         </button>
-        <button className="icon-btn" onClick={() => onLike(msg)} title="Like">{state.liked === msg.id ? <ThumbLikeFilled /> : <ThumbLikeRegular />}</button>
-        <button className={"icon-btn" + (state.liked === msg.id ? ' active' : '')} onClick={() => onDislike(msg)} title="Dislike">{state.disliked === msg.id ? <ThumbDislikeFilled /> : <ThumbDislikeRegular />}</button>
+  <button className={"icon-btn" + (state.liked === msg.id ? ' active' : '')} onClick={() => onLike(msg)} title="Like">{state.liked === msg.id ? <ThumbLikeFilled /> : <ThumbLikeRegular />}</button>
+  <button className={"icon-btn" + (state.disliked === msg.id ? ' active' : '')} onClick={() => onDislike(msg)} title="Dislike">{state.disliked === msg.id ? <ThumbDislikeFilled /> : <ThumbDislikeRegular />}</button>
         <button className="icon-btn" onClick={() => onReload && onReload(msg)} title="Reload">⟳</button>
       </div>
     </div>
   )
 }
 
-export default function ChatWindow({ chat, onSend, updateTitle, chatHistory = [] }) {
+export default function ChatWindow({ chat, onSend, updateTitle, onUpdateMessage, chatHistory = [], onFirstUserMessage }) {
   const [input, setInput] = useState('')
   // initialize localChat defensively so renders won't crash if chat is undefined
   const [localChat, setLocalChat] = useState(chat ?? { title: 'Untitled', messages: [] })
@@ -34,6 +34,8 @@ export default function ChatWindow({ chat, onSend, updateTitle, chatHistory = []
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(localChat.title || '')
   const refEnd = useRef(null)
+  const messagesRef = useRef(null)
+  const messagesEndRef = useRef(null)
 
   useEffect(() => {
     setLocalChat(chat ?? { title: 'Untitled', messages: [] })
@@ -44,13 +46,38 @@ export default function ChatWindow({ chat, onSend, updateTitle, chatHistory = []
   }, [chat])
 
   useEffect(() => {
-    refEnd.current?.scrollIntoView({ behavior: 'smooth' })
+    // scroll to bottom when chat changes
+    scrollToBottom('smooth')
   }, [localChat])
 
   // also scroll when messages length changes
   useEffect(() => {
-    refEnd.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollToBottom('smooth')
   }, [localChat.messages && localChat.messages.length])
+
+  function scrollToBottom(behavior = 'auto') {
+    // prefer scrolling the messages container directly for reliability
+    const el = messagesRef.current
+    if (!el) {
+      messagesEndRef.current?.scrollIntoView({ behavior })
+      return
+    }
+    try {
+      el.scrollTo({ top: el.scrollHeight, behavior })
+    } catch (e) {
+      // fallback for older browsers
+      el.scrollTop = el.scrollHeight
+    }
+  }
+
+  function autoResizeTextarea(el) {
+    try {
+      if (!el) return
+      el.style.height = 'auto'
+      const next = Math.min(el.scrollHeight, 400)
+      el.style.height = next + 'px'
+    } catch (e) {}
+  }
 
   // clear copied state after 1s so filled icon reverts
   useEffect(() => {
@@ -88,21 +115,31 @@ export default function ChatWindow({ chat, onSend, updateTitle, chatHistory = []
     }
     onSend?.(chat?.id, message)
 
+    // If this is the first user message in an otherwise-empty chat, notify parent so it can re-enable New Chat
+    const hadNoMessages = !(localChat.messages && localChat.messages.length)
+    if (hadNoMessages) {
+      // signal parent that the first user question was entered
+      onFirstUserMessage?.(chat?.id)
+    }
+
     setTimeout(() => {
       const bot = { id: Date.now().toString() + 'b', role: 'bot', text: 'This is a simulated response for: ' + input }
       onSend?.(chat?.id, bot)
     }, 700)
 
-    setInput('')
+  setInput('')
+    // ensure the user's message is visible immediately
+    setTimeout(() => scrollToBottom('auto'), 50)
   }
 
   function onCopy(msg) { navigator.clipboard?.writeText(msg.text); setState(s => ({ ...s, copied: msg.id })) }
   function onDislike(msg) { setState(s => ({ ...s, disliked: msg.id, liked: s.liked === msg.id ? null : s.liked })) }
   function onLike(msg) { setState(s => ({ ...s, liked: msg.id, disliked: s.disliked === msg.id ? null : s.disliked })) }
   function onReload(msg) {
-    // naive reload: append a new bot message simulating a refreshed reply
-    const re = { id: Date.now().toString() + 'r', role: 'bot', text: 'Reloaded response for: ' + (msg?.text?.slice(0,120) || '') }
-    onSend?.(chat?.id, re)
+    // overwrite the existing bot message with a refreshed response (simulate)
+    const newText = 'Reloaded response for: ' + (msg?.text?.slice(0,120) || '')
+    const updated = { ...msg, text: newText }
+    onUpdateMessage?.(chat?.id, msg.id, updated)
   }
 
 
@@ -179,40 +216,66 @@ export default function ChatWindow({ chat, onSend, updateTitle, chatHistory = []
             </table>
           </div>
         ) : (
-          <div className="messages">
+          <div className="messages" ref={messagesRef}>
               {localChat.messages && localChat.messages.length ? (
-                localChat.messages.map((message) => (
-                  message.role === 'bot' ? (
-                    <BotMessage key={message.id || message.text} msg={message} onCopy={onCopy} onLike={onLike} onDislike={onDislike} onReload={onReload} state={state} />
-                  ) : (
-                    <div key={message.id || message.text} className={`message ${message.role}`}>
-                      {message.text}
-                    </div>
-                  )
-                ))
+                (() => {
+                  // find last bot message id to show reload only on that one
+                  const lastBotIndex = (() => {
+                    for (let i = localChat.messages.length - 1; i >= 0; i--) {
+                      if (localChat.messages[i].role === 'bot') return i
+                    }
+                    return -1
+                  })()
+                  return localChat.messages.map((message, idx) => (
+                    message.role === 'bot' ? (
+                      <div key={message.id || message.text} className={`message bot`}>
+                        <div className="message-body">{message.text}</div>
+                        <div className="message-actions">
+                          <button className={"icon-btn" + (state.copied === message.id ? ' copied' : '')} onClick={() => onCopy(message)} title="Copy">
+                            {state.copied === message.id ? <CopyFilled /> : <CopyRegular />}
+                            {state.copied === message.id && <span className="copied-label" aria-hidden>Copied</span>}
+                          </button>
+                          <button className={"icon-btn" + (state.liked === message.id ? ' active' : '')} onClick={() => onLike(message)} title="Like">{state.liked === message.id ? <ThumbLikeFilled /> : <ThumbLikeRegular />}</button>
+                          <button className={"icon-btn" + (state.disliked === message.id ? ' active' : '')} onClick={() => onDislike(message)} title="Dislike">{state.disliked === message.id ? <ThumbDislikeFilled /> : <ThumbDislikeRegular />}</button>
+                          {/* show reload only for the last bot message */}
+                          {idx === lastBotIndex && <button className="icon-btn" onClick={() => onReload && onReload(message)} title="Reload">⟳</button>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={message.id || message.text} className={`message ${message.role}`}>
+                        {message.text}
+                      </div>
+                    )
+                  ))
+                })()
               ) : (
-                <div className="no-messages">No messages yet — start the conversation.</div>
+                // show a friendly welcome bot message for brand-new chats
+                <div className="message bot welcome">
+                  <div className="message-body">Welcome to WorkPal — how can I help you today?</div>
+                </div>
               )}
-          </div>
+        <div ref={messagesEndRef} />
+      </div>
         )}
       </div>
 
       {/* show composer only for normal chats (not dashboards) */}
       {!localChat.title?.toLowerCase().includes('dashboard') && (
         <div className="input-area">
-          <div className="input-wrapper">
-            <input
-              type="text"
-              placeholder="Ask Workpal"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
-            />
+              <div className="input-wrapper">
+                <textarea
+                  placeholder="Ask Workpal"
+                  value={input}
+                  onChange={(e) => { setInput(e.target.value); autoResizeTextarea(e.target); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                  rows={1}
+                  ref={(el) => { if (el) { /* ensure initial sizing */ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }}
+                />
             <div className="action-group">
-              <button className="send-btn" aria-label="Send" onClick={send}><SendIcon /></button>
               <button className="mic-btn" aria-label="Microphone" onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); const el = document.createElement('div'); el.className='mic-tooltip'; el.innerText='Work in progress'; el.style.position='fixed'; el.style.left = (rect.left + rect.width/2 - 60) + 'px'; el.style.top = (rect.top - 40) + 'px'; document.body.appendChild(el); setTimeout(()=> el.remove(), 1200) }}>
                 <MicIcon />
               </button>
+              <button className="send-btn" aria-label="Send" onClick={send}><SendIcon /></button>
             </div>
           </div>
         </div>

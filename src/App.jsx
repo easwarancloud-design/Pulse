@@ -30,6 +30,8 @@ const App = () => {
   const allChats = Object.values(chatHistory).flat();
 
   const [selectedChat, setSelectedChat] = useState(allChats[0] || null);
+  // disable creating additional "New chat" items until the user asks the first question
+  const [newChatDisabled, setNewChatDisabled] = useState(false);
 
   const handleSelectChat = async (chatId) => {
     // find local chat first
@@ -69,6 +71,8 @@ const App = () => {
       Today: [newChat, ...(prev.Today || [])],
     }));
     setSelectedChat(newChat);
+    // disable the New chat button until the user sends the first question in this chat
+    setNewChatDisabled(true);
   };
 
   const handleSendMessage = (chatId, message) => {
@@ -86,6 +90,30 @@ const App = () => {
     });
 
     setSelectedChat(prev => prev && prev.id === chatId ? { ...prev, messages: [...(prev.messages||[]), message] } : prev);
+  };
+
+  const handleFirstUserMessage = (chatId) => {
+    // re-enable New chat button after the user has entered the first question
+    setNewChatDisabled(false);
+  };
+
+  const handleUpdateMessage = (chatId, messageId, newMessage) => {
+    // replace a message in-place (by id) in chatHistory and selectedChat
+    setChatHistory(prev => {
+      const updated = { ...prev };
+      for (const key of Object.keys(updated)) {
+        updated[key] = updated[key].map(c => {
+          if (c.id !== chatId) return c;
+          return {
+            ...c,
+            messages: (c.messages || []).map(m => m.id === messageId ? { ...m, ...newMessage } : m)
+          };
+        });
+      }
+      return updated;
+    });
+
+    setSelectedChat(prev => prev && prev.id === chatId ? { ...prev, messages: (prev.messages || []).map(m => m.id === messageId ? { ...m, ...newMessage } : m) } : prev);
   };
 
   const updateTitle = (chatId, title) => {
@@ -129,11 +157,12 @@ const App = () => {
         activeChatId={selectedChat?.id}
         onSelect={handleSelectChat}
         onNewChat={handleNewChat}
+        newChatDisabled={newChatDisabled}
         theme={theme}
         setTheme={setTheme}
         chatHistory={chatHistory}
       />
-      <ChatWindow chat={selectedChat} onSend={handleSendMessage} updateTitle={updateTitle} chatHistory={allChats} />
+  <ChatWindow chat={selectedChat} onSend={handleSendMessage} updateTitle={updateTitle} onUpdateMessage={handleUpdateMessage} chatHistory={allChats} onFirstUserMessage={handleFirstUserMessage} />
     </div>
   );
 };

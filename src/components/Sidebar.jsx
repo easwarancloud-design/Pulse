@@ -84,7 +84,7 @@ function IconMoon() {
   )
 }
 
-export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, theme, setTheme, chatHistory }) {
+export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, theme, setTheme, chatHistory, newChatDisabled }) {
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState(false)
   const [showSearchOnExpand, setShowSearchOnExpand] = useState(false)
@@ -128,6 +128,58 @@ export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, them
     setTheme(newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
   };
+
+  // Ensure the sidebar search-inner uses the exact light-mode color requested
+  // Inline styles are applied as a runtime fallback to override any stubborn
+  // external CSS specificity issues. This runs only when theme is light.
+  useEffect(() => {
+    const el = document.querySelector('.sidebar:not(.collapsed) .sidebar-search .search-inner')
+    if (!el) return
+
+    const setLightInitial = () => {
+      // initial light border in light mode
+      el.style.border = '1px solid rgba(2,6,23,0.04)'
+      // ensure icon and input text use the requested OKLCH color (with hex fallback)
+      const icon = el.querySelector('.search-icon')
+      if (icon) {
+        icon.style.color = '#102033'
+        try { icon.style.color = 'oklch(.928 .0359 250.6 / 1)' } catch (e) {}
+      }
+      const input = el.querySelector('input')
+      if (input) {
+        input.style.color = '#102033'
+        try { input.style.color = 'oklch(.928 .0359 250.6 / 1)' } catch (e) {}
+        // caret color
+        try { input.style.caretColor = 'oklch(.928 .0359 250.6 / 1)' } catch (e) {}
+      }
+    }
+
+    const onFocusIn = () => {
+      // darker border on click/focus
+      el.style.border = '1px solid rgba(2,6,23,0.16)'
+    }
+    const onFocusOut = () => {
+      // revert to light initial border
+      el.style.border = '1px solid rgba(2,6,23,0.04)'
+    }
+
+    // Apply when theme is light; add listeners to handle focus changes
+    if (theme === 'light') {
+      setLightInitial()
+      el.addEventListener('focusin', onFocusIn)
+      el.addEventListener('focusout', onFocusOut)
+      // also handle timing when element mounts later
+      const t = setTimeout(setLightInitial, 120)
+      return () => { clearTimeout(t); el.removeEventListener('focusin', onFocusIn); el.removeEventListener('focusout', onFocusOut); }
+    } else {
+      // remove inline overrides when not in light mode
+      el.style.border = ''
+      const icon = el.querySelector('.search-icon')
+      if (icon) icon.style.color = ''
+      const input = el.querySelector('input')
+      if (input) { input.style.color = ''; try { input.style.caretColor = '' } catch (e) {} }
+    }
+  }, [theme])
 
   // Floating tooltip (append to body so it's not clipped by scrollable containers)
   const tooltipRef = React.useRef(null)
@@ -185,6 +237,7 @@ export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, them
   }
   useEffect(() => { return () => { hideTooltip() } }, [])
 
+
   return (
     <aside className={"sidebar" + (collapsed ? ' collapsed' : '')}>
       <div className="sidebar-top">
@@ -197,21 +250,30 @@ export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, them
         ) : (
           <>
             <div className="brand-row">
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <button className="icon-only collapse-toggle" title="Collapse" onClick={() => setCollapsed(true)} aria-label="Collapse">☰</button>
-                {/* expanded back button shows icon + text; in collapsed mode a separate icon-only button is used */}
-                <button className="back-btn" title="Back to Pulse" onClick={() => window.history.back()} aria-label="Back to Pulse"><IconBack /><span className="back-text">Back</span></button>
-                <div className="brand"><IconPulse /><span className="brand-text">Pulse</span></div>
+              <div className="top-row">
+                <div className="brand-left" style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div className="brand"><IconPulse /><span className="brand-text">Pulse</span></div>
+                </div>
+                <div className="top-right" style={{display:'flex',alignItems:'center',gap:8}}>
+                  <button className="icon-only collapse-toggle" title="Collapse" onClick={() => { setCollapsed(true); }} aria-label="Collapse">☰</button>
+                </div>
               </div>
 
-              <div className="top-actions" style={{display:'flex',alignItems:'center',gap:8}}>
-                <div className="theme-toggle" role="tablist" aria-label="Theme selector">
-                  <button className={"theme-icon sun " + (theme === 'light' ? 'active' : '')} onClick={() => { setTheme('light'); document.documentElement.setAttribute('data-theme','light') }} aria-pressed={theme === 'light'} title="Light">
-                    <IconSun />
-                  </button>
-                  <button className={"theme-icon moon " + (theme === 'dark' ? 'active' : '')} onClick={() => { setTheme('dark'); document.documentElement.setAttribute('data-theme','dark') }} aria-pressed={theme === 'dark'} title="Dark">
-                    <IconMoon />
-                  </button>
+              <div className="second-row">
+                <div className="back-left" style={{display:'flex',alignItems:'center'}}>
+                  <button className={"back-btn" + (theme === 'dark' ? ' dark' : ' light')} title="Back to Pulse" onClick={() => window.history.back()} aria-label="Back to Pulse"><IconBack /><span className="back-text">Back</span></button>
+                </div>
+                <div className="second-right" style={{display:'flex',alignItems:'center'}}>
+                  <div className="top-actions">
+                    <div className="theme-toggle" role="tablist" aria-label="Theme selector">
+                      <button className={"theme-icon sun " + (theme === 'light' ? 'active' : '')} onClick={() => { setTheme('light'); document.documentElement.setAttribute('data-theme','light') }} aria-pressed={theme === 'light'} title="Light">
+                        <IconSun />
+                      </button>
+                      <button className={"theme-icon moon " + (theme === 'dark' ? 'active' : '')} onClick={() => { setTheme('dark'); document.documentElement.setAttribute('data-theme','dark') }} aria-pressed={theme === 'dark'} title="Dark">
+                        <IconMoon />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -369,7 +431,7 @@ export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, them
       </div>
 
       <div className="sidebar-bottom">
-        <button className="new-chat bottom" onClick={onNewChat} title="New chat">+ New chat</button>
+        <button className={"new-chat bottom" + (newChatDisabled ? ' disabled' : '')} onClick={(e) => { if (newChatDisabled) return; onNewChat && onNewChat(); }} title="New chat" aria-disabled={newChatDisabled}>+ New chat</button>
       </div>
     </aside>
   )
