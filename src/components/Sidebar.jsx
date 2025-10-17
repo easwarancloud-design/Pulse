@@ -84,7 +84,17 @@ function IconMoon() {
   )
 }
 
-export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, theme, setTheme, chatHistory, newChatDisabled }) {
+export default function Sidebar({ 
+  chats = [], 
+  activeChatId, 
+  onSelect, 
+  onNewChat, 
+  newChatDisabled, 
+  theme, 
+  setTheme, 
+  chatHistory,
+  onBackToMain
+}) {
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState(false)
   const [showSearchOnExpand, setShowSearchOnExpand] = useState(false)
@@ -244,7 +254,7 @@ export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, them
         {collapsed ? (
             <div className="collapsed-toolbar">
             <button className="icon-only expand-btn" title="Expand" onClick={() => { setCollapsed(false); if (showSearchOnExpand) { setTimeout(()=> { const el = document.querySelector('.sidebar-search input'); el && el.focus(); setShowSearchOnExpand(false) }, 120) } }}>☰</button>
-            <button className="icon-only back-btn" title="Back to Pulse" onClick={() => window.history.back()} aria-label="Back to Pulse"><IconBack /><span className="back-text">Back</span></button>
+            <button className="icon-only back-btn" title="Back to Pulse" onClick={onBackToMain} aria-label="Back to Pulse"><IconBack /><span className="back-text">Back</span></button>
             <button className="icon-only search-btn" title="Search" onClick={() => { setCollapsed(false); setShowSearchOnExpand(true); setTimeout(()=> { const el = document.querySelector('.sidebar-search input'); el && el.focus(); }, 160) }} aria-label="Search"><IconSearch /></button>
           </div>
         ) : (
@@ -261,7 +271,7 @@ export default function Sidebar({ chats, activeChatId, onSelect, onNewChat, them
 
               <div className="second-row">
                 <div className="back-left" style={{display:'flex',alignItems:'center'}}>
-                  <button className={"back-btn" + (theme === 'dark' ? ' dark' : ' light')} title="Back to Pulse" onClick={() => window.history.back()} aria-label="Back to Pulse"><IconBack /><span className="back-text">Back</span></button>
+                  <button className={"back-btn" + (theme === 'dark' ? ' dark' : ' light')} title="Back to Pulse" onClick={onBackToMain} aria-label="Back to Pulse"><IconBack /><span className="back-text">Back</span></button>
                 </div>
                 <div className="second-right" style={{display:'flex',alignItems:'center'}}>
                   <div className="top-actions">
