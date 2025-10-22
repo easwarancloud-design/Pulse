@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "backend": "powershell -File backend\\run-backend.ps1",
     "dev:all": "concurrently \"npm:backend\" \"npm:start\" --success first",
-  "mock-backend": "node backend/mock_server.cjs",
+    "mock-backend": "node backend/mock_server.cjs",
     "dev:mock": "concurrently \"npm:mock-backend\" \"npm:start\" --success first"
   },
   "dependencies": {
@@ -19,7 +19,8 @@
     "@mui/icons-material": "5.14.0",
     "express": "^5.1.0",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "react-router-dom": "^7.9.4"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "5.0.0",

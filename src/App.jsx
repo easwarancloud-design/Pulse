@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
 import MainPage from './components/MainPage';
+import EmbeddedPage from './components/EmbeddedPage';
 import { get as apiGet } from './api';
 
 const App = () => {
@@ -248,34 +250,46 @@ const App = () => {
     return () => { window.removeEventListener('sidebar-rename', onRename); window.removeEventListener('sidebar-pin', onPin) }
   }, [])
 
-  // Show main page or chat result page
-  if (currentView === 'main') {
-    return <MainPage onStartChat={handleStartChat} />;
-  }
-
   return (
-    <div className="app">
-      <Sidebar
-        chats={allChats}
-        activeChatId={selectedChat?.id}
-        onSelect={handleSelectChat}
-        onNewChat={handleNewChat}
-        newChatDisabled={newChatDisabled}
-        theme={theme}
-        setTheme={setTheme}
-        chatHistory={chatHistory}
-        onBackToMain={handleBackToMain}
-      />
-      <ChatWindow 
-        chat={selectedChat} 
-        onSend={handleSendMessage} 
-        updateTitle={updateTitle} 
-        onUpdateMessage={handleUpdateMessage} 
-        chatHistory={allChats} 
-        onFirstUserMessage={handleFirstUserMessage}
-        initialQuestion={initialQuestion}
-      />
-    </div>
+    <Router basename="/workpal">
+      <Routes>
+        {/* Embedded route for iframe integration */}
+        <Route path="/pulsemain/embedded" element={<EmbeddedPage onStartChat={handleStartChat} />} />
+        
+        {/* Main application routes */}
+        <Route path="/*" element={
+          <>
+            {/* Show main page or chat result page */}
+            {currentView === 'main' ? (
+              <MainPage onStartChat={handleStartChat} />
+            ) : (
+              <div className="app">
+                <Sidebar
+                  chats={allChats}
+                  activeChatId={selectedChat?.id}
+                  onSelect={handleSelectChat}
+                  onNewChat={handleNewChat}
+                  newChatDisabled={newChatDisabled}
+                  theme={theme}
+                  setTheme={setTheme}
+                  chatHistory={chatHistory}
+                  onBackToMain={handleBackToMain}
+                />
+                <ChatWindow 
+                  chat={selectedChat} 
+                  onSend={handleSendMessage} 
+                  updateTitle={updateTitle} 
+                  onUpdateMessage={handleUpdateMessage} 
+                  chatHistory={allChats} 
+                  onFirstUserMessage={handleFirstUserMessage}
+                  initialQuestion={initialQuestion}
+                />
+              </div>
+            )}
+          </>
+        } />
+      </Routes>
+    </Router>
   );
 };
 
