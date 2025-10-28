@@ -1,0 +1,46 @@
+{
+  "name": "figma-export-package",
+  "version": "1.0.0",
+  "description": "Figma UI components export package with full application interface and routing",
+  "main": "FigmaApp.jsx",
+  "files": [
+    "*.jsx",
+    "*.js",
+    "*.css",
+    "components/",
+    "context/",
+    "assets/",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "lucide-react": "^0.263.0"
+  },
+  "dependencies": {},
+  "keywords": [
+    "figma",
+    "react",
+    "ui",
+    "components",
+    "tailwind",
+    "routing",
+    "hero-page",
+    "chat-interface",
+    "theme-management"
+  ],
+  "author": "Generated for Figma Integration",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "import": "./FigmaApp.jsx",
+      "require": "./FigmaApp.jsx"
+    },
+    "./FigmaApp": "./FigmaApp.jsx",
+    "./FigmaHeroAppWithRouting": "./FigmaHeroAppWithRouting.jsx",
+    "./FigmaHeroPageWithRouting": "./FigmaHeroPageWithRouting.jsx",
+    "./components/*": "./components/*",
+    "./context/*": "./context/*",
+    "./styles/*": "./*.css"
+  }
+}
