@@ -1,0 +1,34 @@
+{
+  "name": "figma-app-component",
+  "version": "1.0.0",
+  "description": "Figma application as a reusable React component",
+  "main": "src/figma-export.js",
+  "exports": {
+    ".": {
+      "import": "./src/figma-export.js",
+      "require": "./src/figma-export.js"
+    }
+  },
+  "files": [
+    "src/**/*",
+    "public/**/*"
+  ],
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "lucide-react": "^0.263.1"
+  },
+  "dependencies": {
+    "react-router-dom": "^6.8.1"
+  },
+  "keywords": [
+    "react",
+    "component",
+    "figma",
+    "chat",
+    "ai",
+    "search"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

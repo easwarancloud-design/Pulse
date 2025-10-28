@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Figma Hero - AI Search Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+                sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        #root {
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        /* Remove any default iframe borders */
+        iframe {
+            border: none;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <!-- React Scripts will be injected here during build -->
+    <script>
+        // Listen for messages from iframe content
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'FIGMA_SEARCH') {
+                console.log('Search query received:', event.data.query);
+                // Handle the search query - redirect to full app or post to parent
+                if (window.parent && window.parent !== window) {
+                    // If this is embedded in another app, pass the message up
+                    window.parent.postMessage(event.data, '*');
+                } else {
+                    // If standalone, redirect to full app with query
+                    window.location.href = `/figma?q=${encodeURIComponent(event.data.query)}`;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
