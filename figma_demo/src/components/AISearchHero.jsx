@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ChatIcon from './ChatIcon';
 
 const AISearchHero = ({ onSearch }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,6 +33,7 @@ const AISearchHero = ({ onSearch }) => {
         const threadsData = JSON.parse(stored);
         const allThreadsList = [
           ...(threadsData.today || []),
+          ...(threadsData.yesterday || []),
           ...(threadsData.lastWeek || []),
           ...(threadsData.last30Days || [])
         ];
@@ -134,7 +136,7 @@ const AISearchHero = ({ onSearch }) => {
       className="relative"
       style={{
         background: 'linear-gradient(115deg, #122F65 2.06%, #00123C 97.35%)',
-        padding: '32px 128px 24px 128px',
+        padding: 'clamp(16px, 4vw, 32px) clamp(16px, 10vw, 128px) 24px clamp(16px, 10vw, 128px)',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
@@ -192,30 +194,7 @@ const AISearchHero = ({ onSearch }) => {
               lineHeight: '150%'
             }}
           >
-            Good morning, Jane!
-          </div>
-          <div className="flex items-center gap-2.5">
-            <div 
-              className="text-white text-center"
-              style={{
-                fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
-                fontSize: '14px',
-                fontWeight: '400',
-                lineHeight: '150%'
-              }}
-            >
-              Enterprise Actions & Apps
-            </div>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <g clipPath="url(#clip0_6199_120709)">
-                <path d="M4 8H8V4H4V8ZM10 20H14V16H10V20ZM4 20H8V16H4V20ZM4 14H8V10H4V14ZM10 14H14V10H10V14ZM16 4V8H20V4H16ZM10 8H14V4H10V8ZM16 14H20V10H16V14ZM16 20H20V16H16V20Z" fill="white"/>
-              </g>
-              <defs>
-                <clipPath id="clip0_6199_120709">
-                  <rect width="24" height="24" fill="white"/>
-                </clipPath>
-              </defs>
-            </svg>
+            Welcome, Jane!
           </div>
         </div>
 
@@ -269,12 +248,12 @@ const AISearchHero = ({ onSearch }) => {
                 className="flex items-center justify-center p-2 hover:opacity-80 transition-opacity"
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path fillRule="evenodd" clipRule="evenodd" d="M1.33333 0C0.596954 0 0 0.596954 0 1.33333V5.33333C0.000889163 5.8993 0.358985 6.40303 0.893229 6.58984C1.03457 6.64002 1.18336 6.66599 1.33333 6.66667C1.33811 6.66669 1.34288 6.66669 1.34766 6.66667L9.33333 8L1.34766 9.33463C1.34288 9.33418 1.33811 9.33374 1.33333 9.33333C1.18292 9.33386 1.03368 9.35983 0.891927 9.41016C0.358196 9.59741 0.000695057 10.101 0 10.6667V14.6667C0 15.403 0.596954 16 1.33333 16C1.56548 15.9996 1.79348 15.9385 1.99479 15.8229H1.99609L15.5938 8.61458L15.5951 8.61198C15.8403 8.50731 15.9995 8.26661 16 8C16.0004 7.73213 15.8403 7.49006 15.5938 7.38542L1.99609 0.177083C1.7944 0.0612606 1.56592 0.000212161 1.33333 0Z" fill="white" fillOpacity="0.3"/>
+                  <path fillRule="evenodd" clipRule="evenodd" d="M1.33333 0C0.596954 0 0 0.596954 0 1.33333V5.33333C0.000889163 5.8993 0.358985 6.40303 0.893229 6.58984C1.03457 6.64002 1.18336 6.66599 1.33333 6.66667C1.33811 6.66669 1.34288 6.66669 1.34766 6.66667L9.33333 8L1.34766 9.33463C1.34288 9.33418 1.33811 9.33374 1.33333 9.33333C1.18292 9.33386 1.03368 9.35983 0.891927 9.41016C0.358196 9.59741 0.000695057 10.101 0 10.6667V14.6667C0 15.403 0.596954 16 1.33333 16C1.56548 15.9996 1.79348 15.9385 1.99479 15.8229H1.99609L15.5938 8.61458L15.5951 8.61198C15.8403 8.50731 15.9995 8.26661 16 8C16.0004 7.73213 15.8403 7.49006 15.5938 7.38542L1.99609 0.177083C1.7944 0.0612606 1.56592 0.000212161 1.33333 0Z" fill="white"/>
                 </svg>
               </button>
               <button className="flex items-center justify-center p-2 hover:opacity-80 transition-opacity">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M11.9989 14C13.6776 14 15.0328 12.66 15.0328 11V5C15.0328 3.34 13.6776 2 11.9989 2C10.3202 2 8.9651 3.34 8.9651 5V11C8.9651 12.66 10.3202 14 11.9989 14ZM17.9756 11C17.48 11 17.0654 11.36 16.9845 11.85C16.5699 14.2 14.4968 16 11.9989 16C9.50107 16 7.42796 14.2 7.01333 11.85C6.93243 11.36 6.51781 11 6.02228 11C5.40541 11 4.91999 11.54 5.01101 12.14C5.50653 15.14 7.93359 17.49 10.9876 17.92V20C10.9876 20.55 11.4427 21 11.9989 21C12.5551 21 13.0102 20.55 13.0102 20V17.92C16.0643 17.49 18.4913 15.14 18.9868 12.14C19.088 11.54 18.5924 11 17.9756 11Z" fill="white"/>
+                  <path d="M11.9989 14C13.6776 14 15.0328 12.66 15.0328 11V5C15.0328 3.34 13.6776 2 11.9989 2C10.3202 2 8.9651 3.34 8.9651 5V11C8.9651 12.66 10.3202 14 11.9989 14ZM17.9756 11C17.48 11 17.0654 11.36 16.9845 11.85C16.5699 14.2 14.4968 16 11.9989 16C9.50107 16 7.42796 14.2 7.01333 11.85C6.93243 11.36 6.51781 11 6.02228 11C5.40541 11 4.91999 11.54 5.01101 12.14C5.50653 15.14 7.93359 17.49 10.9876 17.92V20C10.9876 20.55 11.4427 21 11.9989 21C12.5551 21 13.0102 20.55 13.0102 20V17.92C16.0643 17.49 18.4913 15.14 18.9868 12.14C19.088 11.54 18.5924 11 17.9756 11Z" fill="white" fillOpacity="0.3"/>
                 </svg>
               </button>
             </div>
@@ -332,20 +311,16 @@ const AISearchHero = ({ onSearch }) => {
                     }}
                   >
                     <div className="w-4 h-4 mr-3 flex-shrink-0">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2ZM20 16H5.17L4 17.17V4H20V16Z" fill="#87D2F7"/>
-                        <circle cx="7" cy="10" r="1" fill="#87D2F7"/>
-                        <circle cx="12" cy="10" r="1" fill="#87D2F7"/>
-                        <circle cx="17" cy="10" r="1" fill="#87D2F7"/>
-                      </svg>
+                      <ChatIcon className="w-4 h-4" color="#87D2F7" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 text-left">
                       <p 
-                        className="text-white font-medium truncate" 
+                        className="text-white font-medium truncate text-left" 
                         style={{ 
                           fontSize: '14px', 
                           lineHeight: '18px',
-                          fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif'
+                          fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                          textAlign: 'left'
                         }}
                       >
                         {suggestion.title}
@@ -354,24 +329,6 @@ const AISearchHero = ({ onSearch }) => {
                   </div>
                 ))}
               </div>
-              
-              {/* Show more indicator if there are more items */}
-              {allThreads.length > 6 && (
-                <div 
-                  className="flex items-center justify-center px-1 py-2 text-white/60 mt-2" 
-                  style={{ 
-                    fontSize: '12px',
-                    fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
-                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                    paddingTop: '8px'
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="mr-2">
-                    <path d="M7.41 8.84L12 13.42L16.59 8.84L18 10.25L12 16.25L6 10.25L7.41 8.84Z" fill="currentColor"/>
-                  </svg>
-                  {allThreads.length - 6} more conversations available
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -404,26 +361,26 @@ const AISearchHero = ({ onSearch }) => {
                 </svg>
               </div>
             </button>
-            <div className="flex justify-between items-center gap-4 flex-1 ml-4">
+            <div className="flex justify-between items-center gap-2 md:gap-4 flex-1 ml-2 md:ml-4">
               {getCurrentQuestions().map((question, index) => (
                 <button
                   key={`${currentQuestionSet}-${index}`}
                   onClick={() => handleSuggestionClick(question)}
-                  className="flex items-center px-4 py-3 cursor-pointer hover:opacity-80 transition-opacity relative group flex-1"
+                  className="flex items-center px-2 md:px-4 py-3 cursor-pointer hover:opacity-80 transition-opacity relative group flex-1"
                   title={question}
                   style={{
                     borderRadius: '100px',
                     border: '1px solid #44B8F3',
                     background: 'rgba(5, 15, 38, 0.40)',
                     minWidth: '0',
-                    maxWidth: '380px'
+                    maxWidth: 'calc((100vw - 200px) / 3)'
                   }}
                 >
                   <div 
-                    className="text-white truncate w-full"
+                    className="text-white truncate w-full text-sm md:text-base"
                     style={{
                       fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
-                      fontSize: '16px',
+                      fontSize: 'clamp(12px, 2.5vw, 16px)',
                       fontWeight: '400',
                       lineHeight: 'normal'
                     }}
@@ -440,51 +397,52 @@ const AISearchHero = ({ onSearch }) => {
               ))}
             </div>
           </div>
-        </div>
-
-        {/* Learn More About AI Button - positioned below questions section */}
-        <div className="flex justify-end w-full max-w-[1184px] mx-auto mt-4">
-          <button
-            onClick={() => setShowAboutBox(!showAboutBox)}
-            className="text-white hover:text-blue-400 transition-colors text-sm underline relative"
-            style={{
-              fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
-              fontSize: '14px',
-              fontWeight: '400'
-            }}
-          >
-            Learn More About AI
-            
-            {/* About Box Popup */}
-            {showAboutBox && (
-              <div 
-                className="absolute bottom-full right-0 mb-2 bg-white rounded-lg shadow-lg p-4 w-80 z-50"
-                style={{
-                  border: '1px solid #e5e7eb'
-                }}
-              >
-                <div className="text-gray-800 text-sm">
-                  <h3 className="font-semibold mb-2 text-gray-900">About This Application</h3>
-                  <p className="mb-2">
-                    This AI-powered assistant helps you with workplace queries, HR policies, and Workday-related questions.
-                  </p>
-                  <p className="mb-2">
-                    Simply type your question or select from the suggested prompts to get started.
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    Powered by advanced AI technology to provide accurate and helpful responses.
-                  </p>
-                </div>
-                
-                {/* Close button arrow pointing to the "Learn More" button */}
-                <div className="absolute bottom-0 right-4 transform translate-y-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white"></div>
-              </div>
-            )}
-          </button>
+          
+          {/* Learn More About AI Button - positioned on next line */}
+          <div className="flex justify-end w-full mt-2">
+            <button
+              onClick={() => setShowAboutBox(!showAboutBox)}
+              className="text-white hover:text-blue-400 transition-colors text-sm underline bg-transparent p-1"
+              style={{
+                fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                fontSize: '14px',
+                fontWeight: '400',
+                minWidth: 'auto',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Learn More About AI
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Removed absolute positioned button - now using relative positioning above */}
+      {/* About Box Popup */}
+      {showAboutBox && (
+        <div 
+          className="absolute bottom-24 right-8 bg-white rounded-lg shadow-lg p-4 w-80 z-50"
+            style={{
+              border: '1px solid #e5e7eb',
+              marginBottom: '8px'
+            }}
+          >
+            <div className="text-gray-800 text-sm">
+              <h3 className="font-semibold mb-2 text-gray-900">About This Application</h3>
+              <p className="mb-2">
+                This AI-powered assistant helps you with workplace queries, HR policies, and Workday-related questions.
+              </p>
+              <p className="mb-2">
+                Simply type your question or select from the suggested prompts to get started.
+              </p>
+              <p className="text-xs text-gray-600">
+                Powered by advanced AI technology to provide accurate and helpful responses.
+              </p>
+            </div>
+            
+            {/* Close button arrow pointing to the "Learn More" button */}
+            <div className="absolute bottom-0 right-8 transform translate-y-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white"></div>
+          </div>
+        )}
     </div>
   );
 };

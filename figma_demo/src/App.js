@@ -79,6 +79,7 @@ function AppContent() {
           const threadsData = JSON.parse(stored);
           const allStoredThreads = [
             ...(threadsData.today || []),
+            ...(threadsData.yesterday || []),
             ...(threadsData.lastWeek || []),
             ...(threadsData.last30Days || [])
           ];
@@ -192,12 +193,14 @@ function AppContent() {
         threadsData = JSON.parse(stored);
         // Ensure the structure exists
         if (!threadsData.today) threadsData.today = [];
+        if (!threadsData.yesterday) threadsData.yesterday = [];
         if (!threadsData.lastWeek) threadsData.lastWeek = [];
         if (!threadsData.last30Days) threadsData.last30Days = [];
       } else {
         // Create the initial structure if none exists
         threadsData = {
           today: [],
+          yesterday: [],
           lastWeek: [],
           last30Days: []
         };

@@ -1,93 +1,195 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, ArrowLeft, Sun, Edit2, Trash2, Check, X } from 'lucide-react';
 import ChatIcon from './components/ChatIcon';
 import JiraIcon from './components/JiraIcon';
 import ServiceNowIcon from './components/ServiceNowIcon';
 
-const MenuSidebar = ({ 
-  onBack, 
-  onToggleTheme, 
-  isDarkMode, 
-  onNewChat, 
-  onThreadSelect, 
-  currentActiveThread, 
-  isNewChatActive,
-  searchQuery = '',
-  isSearchActive = false,
-  onSearch = () => {}
-}) => {
+const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSelect, currentActiveThread, isNewChatActive }) => {
+  const [isDarkModeLocal, setIsDarkModeLocal] = useState(isDarkMode || false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
-  const [filteredThreads, setFilteredThreads] = useState({
-    today: [],
-    yesterday: [],
-    lastWeek: [],
-    last30Days: []
-  });
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Ref for search input to focus when expanded
+  const searchInputRef = useRef(null);
 
   // Load threads from localStorage or use default
   const loadThreadsFromStorage = () => {
     try {
       const stored = localStorage.getItem('chatThreads');
       if (stored) {
-        return JSON.parse(stored);
+        const parsedData = JSON.parse(stored);
+        // Ensure all required categories exist
+        return {
+          today: parsedData.today || [],
+          yesterday: parsedData.yesterday || [],
+          lastWeek: parsedData.lastWeek || [],
+          last30Days: parsedData.last30Days || []
+        };
       }
     } catch (error) {
       console.error('Error loading threads from localStorage:', error);
     }
     return {
-      today: [],
+      today: [
+        {
+          id: 't1',
+          title: 'How to submit sick leave in Workday?',
+          conversation: [
+            { type: 'user', text: 'How do I submit sick leave requests in Workday?' },
+            { type: 'assistant', text: 'To submit sick leave in Workday: 1) Go to Workday homepage > "Time" tile, 2) Click "Request Time Off", 3) Select "Sick Leave" from the dropdown, 4) Choose your dates and duration (full day or partial), 5) Add notes if needed, 6) Submit for approval. For same-day sick leave, you can also call your manager and submit the request when you return. No doctor\'s note required for absences under 3 consecutive days.' }
+          ]
+        },
+        {
+          id: 't2',
+          title: 'Understanding our compensation review cycle',
+          conversation: [
+            { type: 'user', text: 'When does our compensation review happen and how does it work?' },
+            { type: 'assistant', text: 'Our compensation review occurs annually in March. The process includes: salary benchmarking against market data, performance rating consideration, budget allocation per department, and manager recommendations. Merit increases range from 2-8% based on performance and market position. Promotions are evaluated separately in Q4. You\'ll receive notification of any changes by April 1st, effective with the April payroll.' }
+          ]
+        },
+        {
+          id: 't3',
+          title: 'How to access employee handbook in Workday?',
+          conversation: [
+            { type: 'user', text: 'Where can I find the employee handbook and company policies in Workday?' },
+            { type: 'assistant', text: 'Access the employee handbook in Workday by: 1) Logging into Workday, 2) Click on the "Benefits" worklet, 3) Select "View All Benefits", 4) Look for "Resources and Documents" section, 5) Click "Employee Handbook". You can also find specific policies under "Company" > "Company Documents" > "HR Policies". The handbook is updated quarterly, and you\'ll be notified of major policy changes via email.' }
+          ]
+        },
+        {
+          id: 't4',
+          title: 'Requesting flexible work arrangements',
+          conversation: [
+            { type: 'user', text: 'How do I request flexible work arrangements or schedule changes?' },
+            { type: 'assistant', text: 'To request flexible work arrangements: 1) Discuss with your manager first to ensure business needs are met, 2) Complete the "Flexible Work Request" form in Workday under "Actions" > "Job Change" > "Request Flexible Work", 3) Specify your requested schedule, work location, and business justification, 4) Submit for manager and HR approval. Requests are typically processed within 5-7 business days. Arrangements are reviewed every 6 months.' }
+          ]
+        },
+        {
+          id: 't5',
+          title: 'How to view pay statements in Workday?',
+          conversation: [
+            { type: 'user', text: 'Where do I find my pay statements and tax documents in Workday?' },
+            { type: 'assistant', text: 'View your pay information in Workday by: 1) Go to "Pay" worklet on homepage, 2) Click "View Pay" to see current and past pay statements, 3) For tax documents, go to "Pay" > "Tax Documents" to access W-2s and other forms, 4) You can download PDFs or view online. Pay statements are available immediately after each payroll run (bi-weekly on Fridays). Set up email notifications under "Pay" > "Pay Preferences" to get alerts when new statements are available.' }
+          ]
+        }
+      ],
+      yesterday: [
+        {
+          id: 'y1',
+          title: 'FMLA leave application process',
+          conversation: [
+            { type: 'user', text: 'How do I apply for FMLA leave and what documentation is required?' },
+            { type: 'assistant', text: 'To apply for FMLA leave: 1) Contact HR at least 30 days in advance (or ASAP for emergencies), 2) Complete the FMLA request form in Workday under "Benefits" > "Leave of Absence", 3) Obtain medical certification from your healthcare provider using Form DOL-WH-380-E, 4) Submit all documentation to leave@company.com. You\'re eligible if you\'ve worked 1,250+ hours in the past 12 months. FMLA provides up to 12 weeks unpaid leave with job protection and continued health benefits.' }
+          ]
+        },
+        {
+          id: 'y2',
+          title: 'Emergency contact updates in Workday',
+          conversation: [
+            { type: 'user', text: 'How do I update my emergency contacts and personal information in Workday?' },
+            { type: 'assistant', text: 'Update your emergency contacts in Workday: 1) Go to "Personal Information" worklet, 2) Click "Emergency Contacts", 3) Add, edit, or remove contacts as needed, 4) Include full name, relationship, phone numbers, and address, 5) Save changes. Also update your personal address, phone number, and email under "Personal Information" > "Contact Information". Keep this information current as it\'s used for emergency notifications and important company communications.' }
+          ]
+        },
+        {
+          id: 'y3',
+          title: 'Dependent coverage and life events',
+          conversation: [
+            { type: 'user', text: 'How do I add dependents to my benefits after a qualifying life event?' },
+            { type: 'assistant', text: 'After a qualifying life event (marriage, birth, adoption, etc.): 1) You have 30 days to make changes, 2) Go to Workday "Benefits" > "Change Benefits", 3) Select your qualifying event type, 4) Add dependents with their information and required documents, 5) Adjust your benefit selections, 6) Submit by the 30-day deadline. Required documents include marriage certificates, birth certificates, or adoption papers. Changes are effective the first of the month following your event date.' }
+          ]
+        },
+        {
+          id: 'y4',
+          title: 'Workday mobile app setup and features',
+          conversation: [
+            { type: 'user', text: 'How do I set up the Workday mobile app and what can I do with it?' },
+            { type: 'assistant', text: 'Download the Workday app from your app store and sign in with your company credentials. Key features include: time tracking and time-off requests, pay statement viewing, benefits information access, emergency contact updates, and company directory search. Enable push notifications to get alerts for important deadlines. You can also approve team member requests if you\'re a manager. The app syncs with the desktop version in real-time.' }
+          ]
+        }
+      ],
       lastWeek: [
         {
           id: 'lw1',
-          title: 'Can you create a service IT ticket for me ...',
+          title: 'Annual enrollment period and deadlines',
           conversation: [
-            { type: 'user', text: 'Can you create a service IT ticket for me to reset my password?' },
-            { type: 'assistant', text: 'I\'d be happy to help you create a service IT ticket for password reset. Let me guide you through the process.' }
+            { type: 'user', text: 'When is annual enrollment and what changes can I make to my benefits?' },
+            { type: 'assistant', text: 'Annual enrollment runs November 1-15 each year. During this period, you can: change health insurance plans, adjust FSA/HSA contributions, modify life insurance coverage, update dependent coverage, and select voluntary benefits like legal services or pet insurance. If you don\'t make changes, your current elections continue (except FSA, which resets to $0). Review the benefits fair materials and attend information sessions. Changes are effective January 1st.' }
           ]
         },
         {
           id: 'lw2',
-          title: 'Can you find confluence pages related ...',
+          title: 'Tuition reimbursement program requirements',
           conversation: [
-            { type: 'user', text: 'Can you find confluence pages related to our project documentation?' },
-            { type: 'assistant', text: 'I\'ll search for confluence pages related to your project. Here are the relevant documents I found...' }
+            { type: 'user', text: 'What are the requirements for tuition reimbursement and how do I apply?' },
+            { type: 'assistant', text: 'Tuition reimbursement eligibility: 1) Employed for 12+ months, 2) Course must be job-related or lead to degree in your field, 3) Maintain "C" grade or better, 4) Pre-approval required. Apply through Workday "Learning" > "Tuition Assistance" before enrollment. Reimbursement is up to $5,000/year for undergraduate and $7,500/year for graduate courses. Submit receipts and transcripts within 60 days of course completion. Two-year commitment required post-graduation.' }
           ]
         },
         {
           id: 'lw3',
-          title: 'What are the latest project updates for ...',
+          title: 'Workers compensation claim process',
           conversation: [
-            { type: 'user', text: 'What are the latest project updates for the Q4 initiatives?' },
-            { type: 'assistant', text: 'Here are the latest updates for your Q4 initiatives based on the most recent data...' }
+            { type: 'user', text: 'What should I do if I get injured at work? How do I file a workers comp claim?' },
+            { type: 'assistant', text: 'For workplace injuries: 1) Seek immediate medical attention if needed, 2) Report to your supervisor immediately, 3) Call our 24/7 injury hotline: 1-800-INJURY-1, 4) Complete incident report in Workday within 24 hours, 5) Follow up with designated medical provider. Keep all medical documentation and receipts. You may be eligible for medical coverage and wage replacement. Return-to-work accommodations are available. Contact HR for guidance throughout the process.' }
           ]
         },
         {
           id: 'lw4',
-          title: 'What are the key metrics we should ...',
+          title: 'Sabbatical leave policy and eligibility',
           conversation: [
-            { type: 'user', text: 'What are the key metrics we should track for our team performance?' },
-            { type: 'assistant', text: 'Based on your team\'s objectives, here are the key performance metrics you should track...' }
+            { type: 'user', text: 'Does our company offer sabbatical leave? What are the requirements?' },
+            { type: 'assistant', text: 'Sabbatical leave is available after 7 years of continuous employment. You can take 3-6 months unpaid leave for professional development, research, travel, or personal enrichment. Requirements: submit proposal 6 months in advance, demonstrate how it benefits your role/company, arrange coverage for your responsibilities, commit to returning for minimum 2 years. During sabbatical, benefits continue with employee contribution. Apply through Workday "Actions" > "Request Leave of Absence" > "Sabbatical".' }
+          ]
+        },
+        {
+          id: 'lw5',
+          title: 'Internal job posting and transfer process',
+          conversation: [
+            { type: 'user', text: 'How do I apply for internal job postings and what\'s the transfer process?' },
+            { type: 'assistant', text: 'Internal job applications: 1) Browse open positions in Workday "Career" worklet, 2) Click "Find Jobs" to search by location, department, or keywords, 3) Apply directly through Workday with updated profile, 4) Notify your current manager after applying, 5) Complete any required assessments. Interview process is similar to external hires. If selected, typical notice period is 2-4 weeks. You must be in current role for 12+ months and have satisfactory performance to be eligible for transfer.' }
           ]
         }
       ],
       last30Days: [
         {
           id: 'l30d1',
-          title: 'How do I access the company VPN ...',
+          title: 'Stock purchase plan enrollment',
           conversation: [
-            { type: 'user', text: 'How do I access the company VPN from my home office?' },
-            { type: 'assistant', text: 'Here\'s a step-by-step guide to access the company VPN from your home office...' }
+            { type: 'user', text: 'How does the employee stock purchase plan work and how do I enroll?' },
+            { type: 'assistant', text: 'Our Employee Stock Purchase Plan (ESPP) allows you to buy company stock at a 15% discount. Enrollment periods are twice yearly (May and November). You can contribute 1-15% of your base salary through payroll deduction. Stock purchases occur at the end of each 6-month period at the lower of the beginning or ending price, minus 15% discount. Enroll in Workday "Benefits" > "Stock Purchase Plan". Minimum tenure of 6 months required. You can sell immediately or hold for long-term investment.' }
           ]
         },
         {
           id: 'l30d2',
-          title: 'What are the holiday schedules for ...',
+          title: 'Exit interview process and final pay',
           conversation: [
-            { type: 'user', text: 'What are the holiday schedules for this year?' },
-            { type: 'assistant', text: 'Here are the company holiday schedules for this year...' }
+            { type: 'user', text: 'What happens during the exit process when leaving the company?' },
+            { type: 'assistant', text: 'Exit process includes: 1) Two weeks notice (or per your contract), 2) Exit interview with HR (scheduled automatically), 3) Return company property (laptop, badge, phone), 4) Knowledge transfer documentation, 5) Final paycheck includes unused vacation (per state law), 6) COBRA benefits information, 7) 401k rollover options, 8) Reference policy acknowledgment. Your final pay will be processed on your last day or next regular payroll, depending on state requirements. Access to systems is removed on your last day.' }
+          ]
+        },
+        {
+          id: 'l30d3',
+          title: 'Jury duty leave and compensation',
+          conversation: [
+            { type: 'user', text: 'What\'s our policy for jury duty leave and will I still get paid?' },
+            { type: 'assistant', text: 'Jury duty leave policy: 1) Notify your manager immediately upon receiving jury summons, 2) Submit copy of summons to HR, 3) Company provides full pay for first 5 days of jury service, 4) Submit jury duty certificate for payroll processing, 5) You keep any jury compensation received. If service extends beyond 5 days, additional time is unpaid but job-protected. Night shift employees should request day shift consideration. Use Workday to request "Jury Duty" time off type. Court parking and mileage may be reimbursed.' }
+          ]
+        },
+        {
+          id: 'l30d4',
+          title: 'Volunteer time off program benefits',
+          conversation: [
+            { type: 'user', text: 'Does the company offer volunteer time off? How does the program work?' },
+            { type: 'assistant', text: 'Yes! Our Volunteer Time Off (VTO) program provides 16 hours (2 days) of paid time annually for volunteer activities with qualified 501(c)(3) organizations. To use VTO: 1) Confirm organization\'s nonprofit status, 2) Submit volunteer opportunity for pre-approval via Workday "Time" > "Request Volunteer Time Off", 3) Include organization details and volunteer description, 4) Complete volunteer service, 5) Submit verification form with organization signature. VTO hours don\'t roll over and are separate from regular PTO.' }
+          ]
+        },
+        {
+          id: 'l30d5',
+          title: 'Lactation support and mother\'s room access',
+          conversation: [
+            { type: 'user', text: 'What lactation support does the company provide for nursing mothers?' },
+            { type: 'assistant', text: 'Lactation support includes: dedicated mother\'s rooms on each floor with comfortable seating, refrigeration for milk storage, and privacy locks. Rooms can be reserved through Workday "Space Reservations". You\'re entitled to reasonable break time for pumping for up to one year. Flexible schedule accommodations available through your manager. The company also provides lactation consultants, breast pump rental/purchase assistance, and shipping supplies for business travel. Contact HR for access card programming and additional resources.' }
           ]
         }
       ]
@@ -95,6 +197,47 @@ const MenuSidebar = ({
   };
 
   const [allThreads, setAllThreads] = useState(loadThreadsFromStorage());
+  
+  // Filter threads based on search query
+  const getFilteredThreads = () => {
+    // Ensure all categories exist with default empty arrays
+    const safeAllThreads = {
+      today: allThreads.today || [],
+      yesterday: allThreads.yesterday || [],
+      lastWeek: allThreads.lastWeek || [],
+      last30Days: allThreads.last30Days || []
+    };
+
+    if (!searchQuery.trim()) {
+      return safeAllThreads;
+    }
+    
+    const filterThreadsArray = (threads) => 
+      threads.filter(thread => 
+        thread.title.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    
+    return {
+      today: filterThreadsArray(safeAllThreads.today),
+      yesterday: filterThreadsArray(safeAllThreads.yesterday),
+      lastWeek: filterThreadsArray(safeAllThreads.lastWeek),
+      last30Days: filterThreadsArray(safeAllThreads.last30Days)
+    };
+  };
+  
+  const filteredThreads = getFilteredThreads();
+  const isSearching = searchQuery.trim().length > 0;
+  
+  // Handle search icon click in collapsed mode
+  const handleSearchIconClick = () => {
+    setIsCollapsed(false); // Expand the sidebar
+    // Focus the search input after a short delay to ensure it's rendered
+    setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+    }, 100);
+  };
   
   // Refresh threads when component mounts or when localStorage changes
   useEffect(() => {
@@ -114,54 +257,25 @@ const MenuSidebar = ({
     };
   }, []);
   
-  // Filter threads based on search query
-  useEffect(() => {
-    if (!searchQuery || searchQuery.length === 0) {
-      setFilteredThreads({
-        today: [],
-        yesterday: [],
-        lastWeek: [],
-        last30Days: []
-      });
-      return;
-    }
-
-    const query = searchQuery.toLowerCase();
-    
-    const filtered = {
-      today: allThreads.today.filter(thread => 
-        thread.title.toLowerCase().includes(query)
-      ),
-      yesterday: [], // Add yesterday logic if needed
-      lastWeek: allThreads.lastWeek.filter(thread => 
-        thread.title.toLowerCase().includes(query)
-      ),
-      last30Days: allThreads.last30Days.filter(thread => 
-        thread.title.toLowerCase().includes(query)
-      )
-    };
-
-    setFilteredThreads(filtered);
-  }, [searchQuery, allThreads]);
-  
   // Handle thread rename
   const handleRenameThread = (threadId, newTitle) => {
     try {
       const stored = localStorage.getItem('chatThreads');
       if (stored) {
-        const threads = JSON.parse(stored);
+        const threadsData = JSON.parse(stored);
         
-        // Find and update the thread in the appropriate category
-        const categories = ['today', 'lastWeek', 'last30Days'];
-        for (const category of categories) {
-          const threadIndex = threads[category].findIndex(t => t.id === threadId);
-          if (threadIndex !== -1) {
-            threads[category][threadIndex].title = newTitle;
-            localStorage.setItem('chatThreads', JSON.stringify(threads));
-            setAllThreads(threads);
-            break;
+        // Find and update the thread in the correct category
+        ['today', 'yesterday', 'lastWeek', 'last30Days'].forEach(category => {
+          if (threadsData[category]) {
+            const threadIndex = threadsData[category].findIndex(t => t.id === threadId);
+            if (threadIndex !== -1) {
+              threadsData[category][threadIndex].title = newTitle;
+            }
           }
-        }
+        });
+        
+        localStorage.setItem('chatThreads', JSON.stringify(threadsData));
+        setAllThreads(loadThreadsFromStorage());
       }
     } catch (error) {
       console.error('Error renaming thread:', error);
@@ -169,22 +283,23 @@ const MenuSidebar = ({
     setEditingThreadId(null);
     setEditingTitle('');
   };
-
-  // Handle thread deletion
+  
+  // Handle thread delete
   const handleDeleteThread = (threadId) => {
     try {
       const stored = localStorage.getItem('chatThreads');
       if (stored) {
-        const threads = JSON.parse(stored);
+        const threadsData = JSON.parse(stored);
         
-        // Find and remove the thread from the appropriate category
-        const categories = ['today', 'lastWeek', 'last30Days'];
-        for (const category of categories) {
-          threads[category] = threads[category].filter(t => t.id !== threadId);
-        }
+        // Remove the thread from the correct category
+        ['today', 'yesterday', 'lastWeek', 'last30Days'].forEach(category => {
+          if (threadsData[category]) {
+            threadsData[category] = threadsData[category].filter(t => t.id !== threadId);
+          }
+        });
         
-        localStorage.setItem('chatThreads', JSON.stringify(threads));
-        setAllThreads(threads);
+        localStorage.setItem('chatThreads', JSON.stringify(threadsData));
+        setAllThreads(loadThreadsFromStorage());
       }
     } catch (error) {
       console.error('Error deleting thread:', error);
@@ -204,108 +319,7 @@ const MenuSidebar = ({
     setEditingThreadId(null);
     setEditingTitle('');
   };
-
-  // Helper function to render a thread item
-  const renderThreadItem = (thread) => (
-    <div
-      key={thread.id}
-      onClick={() => onThreadSelect(thread)}
-      className={`group flex items-center gap-2 px-2 py-2 rounded cursor-pointer transition-colors w-full ${
-        currentActiveThread?.id === thread.id
-          ? (isDarkMode ? 'bg-[#1F3E81]' : 'bg-blue-50')
-          : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
-      }`}
-    >
-      <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
-      
-      {editingThreadId === thread.id ? (
-        <div className="flex items-center gap-2 flex-1">
-          <input
-            type="text"
-            value={editingTitle}
-            onChange={(e) => setEditingTitle(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleRenameThread(thread.id, editingTitle);
-              } else if (e.key === 'Escape') {
-                cancelEditing();
-              }
-            }}
-            className="flex-1 px-2 py-1 text-sm border rounded"
-            style={{ 
-              background: isDarkMode ? '#1F3E81' : '#FFF',
-              color: isDarkMode ? '#FFF' : '#000',
-              border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
-            }}
-            autoFocus
-          />
-          <button
-            onClick={() => handleRenameThread(thread.id, editingTitle)}
-            className="p-1 hover:opacity-70"
-          >
-            <Check size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
-          </button>
-          <button
-            onClick={cancelEditing}
-            className="p-1 hover:opacity-70"
-          >
-            <X size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
-          </button>
-        </div>
-      ) : (
-        <>
-          <span
-            className="flex-1 min-w-0"
-            style={isDarkMode ? {
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              color: '#FFF',
-              textOverflow: 'ellipsis',
-              fontFamily: 'Elevance Sans',
-              fontSize: '14px',
-              fontStyle: 'normal',
-              fontWeight: 500,
-              lineHeight: '16px'
-            } : {
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              color: '#2861BB',
-              textOverflow: 'ellipsis',
-              fontFamily: 'Elevance Sans',
-              fontSize: '14px',
-              fontStyle: 'normal',
-              fontWeight: 500,
-              lineHeight: '16px'
-            }}
-          >
-            {thread.title}
-          </span>
-          
-          {/* Action buttons - visible on hover */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => startEditing(thread, e)}
-              className="p-1 hover:opacity-70"
-              title="Rename conversation"
-            >
-              <Edit2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDeleteConfirm(thread.id);
-              }}
-              className="p-1 hover:opacity-70"
-              title="Delete conversation"
-            >
-              <Trash2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-
+  
   const agents = [
     { id: 1, name: 'HR Assistant', type: 'hr', bgColor: '#44B8F3' },
     { id: 2, name: 'Jira Agent', type: 'jira' },
@@ -335,277 +349,650 @@ const MenuSidebar = ({
           {/* Menu Icon - Clickable, centered when collapsed */}
           <div className={`${isCollapsed ? 'flex justify-center w-full' : 'flex-shrink-0'}`}>
             <button onClick={() => setIsCollapsed(!isCollapsed)} className="p-1 hover:opacity-70">
-              <svg width="20" height="20" viewBox="0 0 42 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg width="26" height="26" viewBox="0 0 42 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 8V32H34V8H8ZM10.1667 10.1818H17.75V29.8182H10.1667V10.1818ZM19.9167 10.1818H31.8333V29.8182H19.9167V10.1818Z" fill={isDarkMode ? '#FFF' : '#2861BB'}/>
               </svg>
             </button>
           </div>
         </div>
 
-        {/* Back Button */}
-        <div className="flex h-10 items-center gap-3">
-          <button 
-            onClick={onBack} 
-            className="p-1 hover:opacity-70"
-          >
-            <ArrowLeft size={20} color={isDarkMode ? "#FFF" : "#2861BB"} />
-          </button>
-          
-          {!isCollapsed && (
-            <span 
-              style={{ 
-                color: isDarkMode ? '#FFF' : '#2861BB', 
-                fontSize: '16px', 
-                fontWeight: 600, 
-                lineHeight: '16px' 
-              }}
+        {/* Back Button and Dark Mode Toggle - Hidden when collapsed */}
+        {!isCollapsed && (
+          <div className="flex items-start justify-between">
+            {/* Back Button */}
+            <button 
+              className="flex items-center gap-3 flex-1"
+              onClick={onBack}
             >
-              Back to search
-            </span>
-          )}
-        </div>
+              <ArrowLeft className="w-6 h-6" style={{ color: isDarkMode ? '#FFF' : '#2861BB' }} />
+              <span style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 500, lineHeight: '150%' }}>
+                Back
+              </span>
+            </button>
+
+            {/* Dark Mode Toggle */}
+            <button
+              onClick={() => {
+                setIsDarkModeLocal(!isDarkModeLocal);
+                if (onToggleTheme) onToggleTheme();
+              }}
+              className="relative w-12 h-6 rounded-full border flex items-center transition-all"
+              style={{ borderColor: isDarkMode ? '#FFF' : '#1A3673', backgroundColor: isDarkMode ? '#444' : '#FFF' }}
+            >
+              {/* Toggle Circle */}
+              <div
+                className="absolute w-[19px] h-[19px] rounded-full transition-all"
+                style={{
+                  backgroundColor: isDarkMode ? '#FFF' : '#1A3673',
+                  left: isDarkModeLocal ? 'calc(100% - 22px)' : '3px',
+                  top: '2px'
+                }}
+              />
+              {/* Sun Icon */}
+              <Sun
+                className="absolute w-5 h-5"
+                style={{
+                  color: isDarkMode ? '#FFF' : '#1A3673',
+                  right: '2px',
+                  top: '2px'
+                }}
+              />
+            </button>
+          </div>
+        )}
+
+        {/* Back button - Shown only when collapsed */}
+        {isCollapsed && (
+          <div className="flex justify-center">
+            <button onClick={onBack} className="p-2 hover:opacity-70">
+              <ArrowLeft className="w-5 h-5" style={{ color: isDarkMode ? '#FFF' : '#2861BB' }} />
+            </button>
+          </div>
+        )}
+
+        {/* Search Bar or Search Icon */}
+        {isCollapsed ? (
+          <div className="flex justify-center">
+            <button onClick={handleSearchIconClick} className="p-2 hover:opacity-70">
+              <Search className="w-5 h-5" style={{ color: isDarkMode ? '#FFF' : '#2861BB' }} />
+            </button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search previous threads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-8 py-2 text-sm rounded border focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{
+                backgroundColor: isDarkMode ? '#1F3E81' : '#FFF',
+                color: isDarkMode ? '#FFF' : '#333',
+                borderColor: isDarkMode ? '#444' : '#CCC'
+              }}
+            />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: isDarkMode ? '#FFF' : '#949494' }} />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 hover:opacity-80"
+                style={{ color: isDarkMode ? '#FFF' : '#949494' }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="w-full h-px" style={{ backgroundColor: isDarkMode ? '#444' : '#CCC' }} />
       </div>
 
       {/* Scrollable Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Content Section */}
-        <div className="flex flex-col px-4 pb-6 gap-6 flex-1 overflow-y-auto">
-          {/* Theme Toggle */}
-          <div className="flex items-center gap-2.5">
-            <button 
-              onClick={onToggleTheme}
-              className="flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
-              style={{
-                width: '36px',
-                height: '36px',
-                padding: '8px',
-                borderRadius: '8px',
-                border: '1px solid #44B8F3',
-                background: 'rgba(5, 15, 38, 0.40)'
-              }}
-            >
-              <Sun size={20} color="#44B8F3" />
-            </button>
-            
-            {!isCollapsed && (
-              <span style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 600 }}>
-                Switch to {isDarkMode ? 'Light' : 'Dark'} Mode
+      <div 
+        className="flex-1 overflow-y-auto px-4" 
+        style={{ 
+          scrollbarWidth: 'none', 
+          msOverflowStyle: 'none',
+          WebkitScrollbar: 'none'
+        }}
+      >
+        <style jsx>{`
+          div::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
+        {!isCollapsed && (
+          <>
+            {/* Agents Section - Hidden when searching */}
+            {!isSearching && (
+              <div className="flex flex-col items-center gap-2.5 px-2 mb-6">
+            <div className="w-full" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 600, lineHeight: '16px' }}>
+              Agents
+            </div>
+
+            {/* Agent Items */}
+            {agents.map((agent) => (
+            <button key={agent.id} className={`flex items-center gap-2 w-full p-2 rounded transition-colors ${isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50'}`}>
+              {/* Avatar */}
+              {agent.type === 'hr' && (
+                <div
+                  className="flex items-center justify-center w-7 h-7 rounded-full"
+                  style={{ backgroundColor: agent.bgColor }}
+                >
+                  <span style={{ color: '#FFF', fontSize: '14px', fontWeight: 600, lineHeight: '16px' }}>
+                    HR
+                  </span>
+                </div>
+              )}
+              {agent.type === 'jira' && <JiraIcon color={isDarkMode ? '#FFF' : '#2684FF'} />}
+              {agent.type === 'servicenow' && <ServiceNowIcon color={isDarkMode ? '#FFF' : '#62D84E'} />}
+
+              {/* Agent Name */}
+              <span
+                className="truncate"
+                style={{
+                  color: isDarkMode ? '#FFF' : '#2861BB',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  lineHeight: '16px'
+                }}
+              >
+                {agent.name}
               </span>
-            )}
+            </button>
+          ))}
+        </div>
+        )}
+
+        {/* Previous Threads Section */}
+        <div className="flex flex-col items-start gap-4 mb-6">
+          {/* Divider - Only show when not searching */}
+          {!isSearching && (
+            <div className="w-full h-px" style={{ backgroundColor: isDarkMode ? '#444' : '#CCC' }} />
+          )}
+
+          {/* Previous Threads Header */}
+          <div className="flex items-center gap-2.5 w-full px-2">
+            <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 600, lineHeight: '16px' }}>
+              {isSearching ? `Search Results` : 'Previous Threads'}
+            </div>
           </div>
 
-          {/* Agents Section */}
-          <div className="flex flex-col items-start gap-4">
-            {/* Agents Header */}
-            {!isCollapsed && (
-              <div className="flex items-center gap-2.5 w-full px-2">
-                <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 600, lineHeight: '16px' }}>
-                  Agents
+          {/* Threads List */}
+          <div className="flex flex-col items-start gap-6 w-full">
+            {/* Today Section */}
+            {filteredThreads.today.length > 0 && (
+              <div className="flex flex-col items-start gap-1 w-full">
+                <div className="flex items-center gap-2.5 w-full pl-2">
+                  <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
+                    Today ({filteredThreads.today.length})
+                  </div>
+                </div>
+
+                {/* Thread Items */}
+                <div className="flex flex-col items-start gap-2 w-full">
+                  {filteredThreads.today.map((thread, index) => (
+                    <div 
+                      key={index} 
+                      className={`flex items-center gap-2 w-full p-2 rounded transition-colors group ${
+                        currentActiveThread?.id === thread.id 
+                          ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
+                          : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
+                      }`}
+                    >
+                      <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
+                      
+                      {editingThreadId === thread.id ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input
+                            type="text"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                handleRenameThread(thread.id, editingTitle);
+                              } else if (e.key === 'Escape') {
+                                cancelEditing();
+                              }
+                            }}
+                            className="flex-1 px-2 py-1 text-sm border rounded"
+                            style={{ 
+                              background: isDarkMode ? '#1F3E81' : '#FFF',
+                              color: isDarkMode ? '#FFF' : '#000',
+                              border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleRenameThread(thread.id, editingTitle)}
+                            className="p-1 hover:opacity-70"
+                          >
+                            <Check size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            className="p-1 hover:opacity-70"
+                          >
+                            <X size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <span
+                            className="text-left flex-1 cursor-pointer"
+                            onClick={() => onThreadSelect && onThreadSelect(thread)}
+                            style={isDarkMode ? {
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              color: '#FFF',
+                              textOverflow: 'ellipsis',
+                              fontFamily: 'Elevance Sans',
+                              fontSize: '14px',
+                              fontStyle: 'normal',
+                              fontWeight: 500,
+                              lineHeight: '16px'
+                            } : {
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              color: '#2861BB',
+                              textOverflow: 'ellipsis',
+                              fontFamily: 'Elevance Sans',
+                              fontSize: '14px',
+                              fontStyle: 'normal',
+                              fontWeight: 500,
+                              lineHeight: '16px'
+                            }}
+                          >
+                            {thread.title}
+                          </span>
+                          
+                          {/* Action buttons - visible on hover */}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => startEditing(thread, e)}
+                              className="p-1 hover:opacity-70"
+                              title="Rename conversation"
+                            >
+                              <Edit2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDeleteConfirm(thread.id);
+                              }}
+                              className="p-1 hover:opacity-70"
+                              title="Delete conversation"
+                            >
+                              <Trash2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Agent Buttons */}
-            <div className="flex flex-col items-start gap-3 w-full">
-              {agents.map((agent) => (
-                <button
-                  key={agent.id}
-                  className="flex items-center gap-3 w-full p-3 rounded-lg hover:opacity-80 transition-opacity"
-                  style={{
-                    background: agent.bgColor || '#44B8F3',
-                    justifyContent: isCollapsed ? 'center' : 'flex-start'
-                  }}
-                >
-                  {agent.type === 'hr' && <ChatIcon className="w-6 h-6 flex-shrink-0" color="#FFF" />}
-                  {agent.type === 'jira' && <JiraIcon className="w-6 h-6 flex-shrink-0" />}
-                  {agent.type === 'servicenow' && <ServiceNowIcon className="w-6 h-6 flex-shrink-0" />}
-                  
-                  {!isCollapsed && (
-                    <span className="text-white text-sm font-medium">
-                      {agent.name}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Search Input Section */}
-          {!isCollapsed && (
-            <div className="w-full px-2 mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4" style={{ color: isDarkMode ? '#999' : '#666' }} />
-                <input
-                  type="text"
-                  placeholder="Search conversations..."
-                  value={searchQuery}
-                  onChange={(e) => onSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                  style={{
-                    backgroundColor: isDarkMode ? '#1a2332' : '#f8f9fa',
-                    borderColor: isDarkMode ? '#374151' : '#d1d5db',
-                    color: isDarkMode ? '#fff' : '#374151'
-                  }}
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => onSearch('')}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 hover:opacity-70"
-                    style={{ color: isDarkMode ? '#999' : '#666' }}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Previous Threads Section */}
-          <div className="flex flex-col items-start gap-4 mb-6">
-            {/* Divider */}
-            <div className="w-full h-px" style={{ backgroundColor: isDarkMode ? '#444' : '#CCC' }} />
-
-            {/* Previous Threads Header */}
-            <div className="flex items-center gap-2.5 w-full px-2">
-              <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 600, lineHeight: '16px' }}>
-                {isSearchActive ? `Search Results for "${searchQuery}"` : 'Previous Threads'}
-              </div>
-            </div>
-
-            {/* Search Results or Normal Threads List */}
-            {isSearchActive ? (
-              // Show search results
-              <div className="flex flex-col items-start gap-6 w-full">
-                {(() => {
-                  const hasResults = Object.values(filteredThreads).some(threads => threads.length > 0);
-                  
-                  if (!hasResults) {
-                    return (
-                      <div className="w-full px-2 py-8 text-center" style={{ color: isDarkMode ? '#999' : '#666' }}>
-                        No conversations found for "{searchQuery}"
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <>
-                      {/* Today Search Results */}
-                      {filteredThreads.today.length > 0 && (
-                        <div className="flex flex-col items-start gap-1 w-full">
-                          <div className="flex items-center gap-2.5 w-full pl-2">
-                            <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
-                              Today ({filteredThreads.today.length})
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-start gap-2 w-full">
-                            {filteredThreads.today.map((thread) => (
-                              <div key={thread.id} className="w-full">
-                                {renderThreadItem(thread)}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Last Week Search Results */}
-                      {filteredThreads.lastWeek.length > 0 && (
-                        <div className="flex flex-col items-start gap-1 w-full">
-                          <div className="flex items-center gap-2.5 w-full pl-2">
-                            <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
-                              Last Week ({filteredThreads.lastWeek.length})
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-start gap-2 w-full">
-                            {filteredThreads.lastWeek.map((thread) => (
-                              <div key={thread.id} className="w-full">
-                                {renderThreadItem(thread)}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Last 30 Days Search Results */}
-                      {filteredThreads.last30Days.length > 0 && (
-                        <div className="flex flex-col items-start gap-1 w-full">
-                          <div className="flex items-center gap-2.5 w-full pl-2">
-                            <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
-                              Last 30 Days ({filteredThreads.last30Days.length})
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-start gap-2 w-full">
-                            {filteredThreads.last30Days.map((thread) => (
-                              <div key={thread.id} className="w-full">
-                                {renderThreadItem(thread)}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            ) : (
-              // Show normal threads list
-              <div className="flex flex-col items-start gap-6 w-full">
-                {/* Today Section */}
-                {allThreads.today.length > 0 && (
-                  <div className="flex flex-col items-start gap-1 w-full">
-                    <div className="flex items-center gap-2.5 w-full pl-2">
-                      <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
-                        Today ({allThreads.today.length})
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-start gap-2 w-full">
-                      {allThreads.today.map((thread) => (
-                        <div key={thread.id} className="w-full">
-                          {renderThreadItem(thread)}
-                        </div>
-                      ))}
-                    </div>
+            {/* Yesterday Section */}
+            {filteredThreads.yesterday.length > 0 && (
+              <div className="flex flex-col items-start gap-1 w-full">
+                <div className="flex items-center gap-2.5 w-full pl-2">
+                  <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
+                    Yesterday ({filteredThreads.yesterday.length})
                   </div>
-                )}
+                </div>
 
-                {/* Last Week Section */}
-                {allThreads.lastWeek.length > 0 && (
-                  <div className="flex flex-col items-start gap-1 w-full">
-                    <div className="flex items-center gap-2.5 w-full pl-2">
-                      <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
-                        Last week ({allThreads.lastWeek.length})
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-start gap-2 w-full">
-                      {allThreads.lastWeek.map((thread) => (
-                        <div key={thread.id} className="w-full">
-                          {renderThreadItem(thread)}
+                {/* Thread Items */}
+                <div className="flex flex-col items-start gap-2 w-full">
+                  {filteredThreads.yesterday.map((thread, index) => (
+                    <div 
+                      key={index} 
+                      className={`flex items-center gap-2 w-full p-2 rounded transition-colors group ${
+                        currentActiveThread?.id === thread.id 
+                          ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
+                          : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
+                      }`}
+                    >
+                      <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
+                      
+                      {editingThreadId === thread.id ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input
+                            type="text"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                handleRenameThread(thread.id, editingTitle);
+                              } else if (e.key === 'Escape') {
+                                cancelEditing();
+                              }
+                            }}
+                            className="flex-1 px-2 py-1 text-sm border rounded"
+                            style={{ 
+                              background: isDarkMode ? '#1F3E81' : '#FFF',
+                              color: isDarkMode ? '#FFF' : '#000',
+                              border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleRenameThread(thread.id, editingTitle)}
+                            className="p-1 hover:opacity-70"
+                          >
+                            <Check size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            className="p-1 hover:opacity-70"
+                          >
+                            <X size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
                         </div>
-                      ))}
+                      ) : (
+                        <>
+                          <span
+                            className="text-left flex-1 cursor-pointer"
+                            onClick={() => onThreadSelect && onThreadSelect(thread)}
+                            style={isDarkMode ? {
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              color: '#FFF',
+                              textOverflow: 'ellipsis',
+                              fontFamily: 'Elevance Sans',
+                              fontSize: '14px',
+                              fontStyle: 'normal',
+                              fontWeight: 500,
+                              lineHeight: '16px'
+                            } : {
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              color: '#2861BB',
+                              textOverflow: 'ellipsis',
+                              fontFamily: 'Elevance Sans',
+                              fontSize: '14px',
+                              fontStyle: 'normal',
+                              fontWeight: 500,
+                              lineHeight: '16px'
+                            }}
+                          >
+                            {thread.title}
+                          </span>
+                          
+                          {/* Action buttons - visible on hover */}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => startEditing(thread, e)}
+                              className="p-1 hover:opacity-70"
+                              title="Rename conversation"
+                            >
+                              <Edit2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDeleteConfirm(thread.id);
+                              }}
+                              className="p-1 hover:opacity-70"
+                              title="Delete conversation"
+                            >
+                              <Trash2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
-                  </div>
-                )}
-
-                {/* Last 30 Days Section */}
-                {allThreads.last30Days.length > 0 && (
-                  <div className="flex flex-col items-start gap-1 w-full">
-                    <div className="flex items-center gap-2.5 w-full pl-2">
-                      <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
-                        Last 30 days ({allThreads.last30Days.length})
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-start gap-2 w-full">
-                      {allThreads.last30Days.map((thread) => (
-                        <div key={thread.id} className="w-full">
-                          {renderThreadItem(thread)}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* Last Week Section */}
+            <div className="flex flex-col items-start gap-1 w-full">
+              <div className="flex items-center gap-2.5 w-full pl-2">
+                <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
+                  Last week ({filteredThreads.lastWeek.length})
+                </div>
+              </div>
+
+              {/* Thread Items */}
+              <div className="flex flex-col items-start gap-2 w-full">
+                {filteredThreads.lastWeek.map((thread, index) => (
+                  <div 
+                    key={index} 
+                    className={`flex items-center gap-2 w-full p-2 rounded transition-colors group ${
+                      currentActiveThread?.id === thread.id 
+                        ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
+                        : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
+                    }`}
+                  >
+                    <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
+                    
+                    {editingThreadId === thread.id ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              handleRenameThread(thread.id, editingTitle);
+                            } else if (e.key === 'Escape') {
+                              cancelEditing();
+                            }
+                          }}
+                          className="flex-1 px-2 py-1 text-sm border rounded"
+                          style={{ 
+                            background: isDarkMode ? '#1F3E81' : '#FFF',
+                            color: isDarkMode ? '#FFF' : '#000',
+                            border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
+                          }}
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleRenameThread(thread.id, editingTitle)}
+                          className="p-1 hover:opacity-70"
+                        >
+                          <Check size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="p-1 hover:opacity-70"
+                        >
+                          <X size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span
+                          className="text-left flex-1 cursor-pointer"
+                          onClick={() => onThreadSelect && onThreadSelect(thread)}
+                          style={isDarkMode ? {
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            color: '#FFF',
+                            textOverflow: 'ellipsis',
+                            fontFamily: 'Elevance Sans',
+                            fontSize: '14px',
+                            fontStyle: 'normal',
+                            fontWeight: 500,
+                            lineHeight: '16px'
+                          } : {
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            color: '#2861BB',
+                            textOverflow: 'ellipsis',
+                            fontFamily: 'Elevance Sans',
+                            fontSize: '14px',
+                            fontStyle: 'normal',
+                            fontWeight: 500,
+                            lineHeight: '16px'
+                          }}
+                        >
+                          {thread.title}
+                        </span>
+                        
+                        {/* Action buttons - visible on hover */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => startEditing(thread, e)}
+                            className="p-1 hover:opacity-70"
+                            title="Rename conversation"
+                          >
+                            <Edit2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowDeleteConfirm(thread.id);
+                            }}
+                            className="p-1 hover:opacity-70"
+                            title="Delete conversation"
+                          >
+                            <Trash2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Last 30 Days Section */}
+            <div className="flex flex-col items-start gap-1 w-full">
+              <div className="flex items-center gap-2.5 w-full pl-2">
+                <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '12px', fontWeight: 600, lineHeight: '16px' }}>
+                  Last 30 days ({filteredThreads.last30Days.length})
+                </div>
+              </div>
+
+              {/* Thread Items */}
+              <div className="flex flex-col items-start gap-2 w-full">
+                {filteredThreads.last30Days.map((thread, index) => (
+                  <div 
+                    key={index} 
+                    className={`flex items-center gap-2 w-full p-2 rounded transition-colors group ${
+                      currentActiveThread?.id === thread.id 
+                        ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
+                        : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
+                    }`}
+                  >
+                    <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
+                    
+                    {editingThreadId === thread.id ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              handleRenameThread(thread.id, editingTitle);
+                            } else if (e.key === 'Escape') {
+                              cancelEditing();
+                            }
+                          }}
+                          className="flex-1 px-2 py-1 text-sm border rounded"
+                          style={{ 
+                            background: isDarkMode ? '#1F3E81' : '#FFF',
+                            color: isDarkMode ? '#FFF' : '#000',
+                            border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
+                          }}
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleRenameThread(thread.id, editingTitle)}
+                          className="p-1 hover:opacity-70"
+                        >
+                          <Check size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="p-1 hover:opacity-70"
+                        >
+                          <X size={14} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span
+                          className="text-left flex-1 cursor-pointer"
+                          onClick={() => onThreadSelect && onThreadSelect(thread)}
+                          style={isDarkMode ? {
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            color: '#FFF',
+                            textOverflow: 'ellipsis',
+                            fontFamily: 'Elevance Sans',
+                            fontSize: '14px',
+                            fontStyle: 'normal',
+                            fontWeight: 500,
+                            lineHeight: '16px'
+                          } : {
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            color: '#2861BB',
+                            textOverflow: 'ellipsis',
+                            fontFamily: 'Elevance Sans',
+                            fontSize: '14px',
+                            fontStyle: 'normal',
+                            fontWeight: 500,
+                            lineHeight: '16px'
+                          }}
+                        >
+                          {thread.title}
+                        </span>
+                        
+                        {/* Action buttons - visible on hover */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => startEditing(thread, e)}
+                            className="p-1 hover:opacity-70"
+                            title="Rename conversation"
+                          >
+                            <Edit2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowDeleteConfirm(thread.id);
+                            }}
+                            className="p-1 hover:opacity-70"
+                            title="Delete conversation"
+                          >
+                            <Trash2 size={12} color={isDarkMode ? "#FFF" : "#2861BB"} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
+        
+        {/* No results message */}
+        {isSearching && filteredThreads.today.length === 0 && filteredThreads.yesterday.length === 0 && filteredThreads.lastWeek.length === 0 && filteredThreads.last30Days.length === 0 && (
+          <div className="text-center py-8">
+            <div className="text-sm" style={{ color: isDarkMode ? '#FFF' : '#949494' }}>
+              No threads found matching "{searchQuery}"
+            </div>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="mt-2 text-xs hover:underline"
+              style={{ color: isDarkMode ? '#FFF' : '#2861BB' }}
+            >
+              Clear search
+            </button>
+          </div>
+        )}
+          </>
+        )}
       </div>
 
       {/* New Chat Button - Fixed at Bottom */}
@@ -621,44 +1008,67 @@ const MenuSidebar = ({
           } ${
             isNewChatActive 
               ? 'bg-gray-300 cursor-not-allowed' 
-              : (isDarkMode ? 'bg-[#2861BB] hover:bg-[#1F4B8A]' : 'bg-[#2861BB] hover:bg-[#1F4B8A]')
+              : (isDarkMode ? 'bg-white hover:bg-gray-100' : 'bg-[#2861BB] hover:bg-[#1f4a9c]')
           }`}
         >
-          <Plus size={20} color="#FFF" />
+          <Plus 
+            className={`${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'}`} 
+            style={{ 
+              color: isCollapsed 
+                ? (isDarkMode ? '#2861BB' : '#FFF')
+                : (isNewChatActive ? '#999' : (isDarkMode ? '#2861BB' : '#FFF'))
+            }} 
+          />
           {!isCollapsed && (
-            <span className="text-white text-sm font-medium">
-              New Chat
+            <span style={{ color: isNewChatActive ? '#999' : (isDarkMode ? '#2861BB' : '#FFF'), fontSize: '14px', fontWeight: 600 }}>
+              {isNewChatActive ? 'New chat' : 'New chat'}
             </span>
           )}
         </button>
       </div>
-
+      
       {/* Delete Confirmation Dialog */}
       {showDeleteConfirm && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm mx-4" style={{ backgroundColor: isDarkMode ? '#1F3E81' : '#FFF' }}>
-            <h3 className="text-lg font-semibold mb-2" style={{ color: isDarkMode ? '#FFF' : '#000' }}>
+          <div 
+            className="p-4 rounded-lg shadow-lg max-w-sm mx-4"
+            style={{
+              background: isDarkMode ? '#1F3E81' : '#FFF',
+              border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
+            }}
+          >
+            <h3 
+              className="text-lg font-semibold mb-3"
+              style={{ color: isDarkMode ? '#FFF' : '#000' }}
+            >
               Delete Conversation
             </h3>
-            <p className="mb-4" style={{ color: isDarkMode ? '#CCC' : '#666' }}>
+            <p 
+              className="text-sm mb-4"
+              style={{ color: isDarkMode ? '#A0BEEA' : '#666' }}
+            >
               Are you sure you want to delete this conversation? This action cannot be undone.
             </p>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => handleDeleteThread(showDeleteConfirm)}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors"
-              >
-                Delete
-              </button>
+            <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
-                className="flex-1 py-2 px-4 rounded-lg transition-colors"
-                style={{ 
-                  backgroundColor: isDarkMode ? '#444' : '#E5E7EB',
-                  color: isDarkMode ? '#FFF' : '#374151'
+                className="px-3 py-1 rounded text-sm"
+                style={{
+                  background: isDarkMode ? '#2861BB' : '#F0F0F0',
+                  color: isDarkMode ? '#FFF' : '#000'
                 }}
               >
                 Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteThread(showDeleteConfirm)}
+                className="px-3 py-1 rounded text-sm"
+                style={{
+                  background: '#DC2626',
+                  color: '#FFF'
+                }}
+              >
+                Delete
               </button>
             </div>
           </div>

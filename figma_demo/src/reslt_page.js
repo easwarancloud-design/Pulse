@@ -309,16 +309,96 @@ const ActionIcons = () => {
 
 const ExpandedSidebar = ({ agents, threads, onBack, onAddNewChat, onSelectChat, chats }) => {
   const { colors } = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Helper function to categorize threads by time
+  const categorizeThreadsByTime = (threads) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const lastMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    return [
+      {
+        group: 'Today',
+        links: threads.filter(thread => {
+          const date = thread.timestamp ? new Date(thread.timestamp) : new Date();
+          return date >= today;
+        })
+      },
+      {
+        group: 'Yesterday', 
+        links: threads.filter(thread => {
+          const date = thread.timestamp ? new Date(thread.timestamp) : new Date();
+          return date >= yesterday && date < today;
+        })
+      },
+      {
+        group: 'Last 7 days',
+        links: threads.filter(thread => {
+          const date = thread.timestamp ? new Date(thread.timestamp) : new Date();
+          return date >= lastWeek && date < yesterday;
+        })
+      },
+      {
+        group: 'Last 30 days',
+        links: threads.filter(thread => {
+          const date = thread.timestamp ? new Date(thread.timestamp) : new Date();
+          return date >= lastMonth && date < lastWeek;
+        })
+      },
+      {
+        group: 'Older',
+        links: threads.filter(thread => {
+          const date = thread.timestamp ? new Date(thread.timestamp) : new Date();
+          return date < lastMonth;
+        })
+      }
+    ].filter(group => group.links.length > 0);
+  };
+  
+  // Filter threads based on search query
+  const getFilteredThreads = () => {
+    if (!searchQuery.trim()) {
+      return threads;
+    }
+    
+    // Get all threads from chats data for better filtering
+    const allThreads = chats.map(chat => ({
+      title: chat.title,
+      id: chat.id,
+      timestamp: chat.timestamp || new Date()
+    }));
+    
+    // Filter threads that match search query
+    const filteredThreads = allThreads.filter(thread =>
+      thread.title.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    
+    // Categorize filtered threads by time
+    return categorizeThreadsByTime(filteredThreads);
+  };
+  
+  const filteredThreads = getFilteredThreads();
+  const isSearching = searchQuery.trim().length > 0;
   
   const ThreadLink = ({ children, onClick }) => (
     <a
       href="#"
       onClick={onClick}
       title={children} // Add tooltip with full title
-      className="flex items-start p-1.5 rounded-lg text-sm transition-colors cursor-pointer hover:opacity-80 w-full"
+      className="flex items-start p-2 rounded-lg text-sm transition-all duration-200 cursor-pointer hover:opacity-80 w-full hover:bg-opacity-50"
       style={{
         color: colors.PRIMARY_COLOR, // Thread links use primary blue in both modes
-        backgroundColor: colors.SURFACE_BG === '#121e33' ? 'transparent' : 'white', // Base background
+        backgroundColor: 'transparent', // Base background
+      }}
+      onMouseEnter={(e) => {
+        const hoverBg = colors.SURFACE_BG === '#121e33' ? colors.BUBBLE_BG_SYSTEM : '#f3f4f6';
+        e.currentTarget.style.backgroundColor = hoverBg;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = 'transparent';
       }}
     >
       <MessageSquare size={16} style={{ color: colors.PRIMARY_COLOR }} className="mr-1 mt-0.5 flex-shrink-0" />
@@ -333,7 +413,9 @@ const ExpandedSidebar = ({ agents, threads, onBack, onAddNewChat, onSelectChat, 
         <div className="relative">
           <input
             type="text"
-            placeholder="Search"
+            placeholder="Search previous threads..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 text-sm rounded-lg focus:ring-0 focus:border-blue-500"
             style={{
               backgroundColor: colors.BUBBLE_BG_SYSTEM,
@@ -342,28 +424,38 @@ const ExpandedSidebar = ({ agents, threads, onBack, onAddNewChat, onSelectChat, 
             }}
           />
           <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: colors.TEXT_LOW_CONTRAST }} />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 hover:opacity-80"
+              style={{ color: colors.TEXT_LOW_CONTRAST }}
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4">
-        {/* Agents Section */}
-        <div className="mb-6">
-          <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>Agents</h3>
-          <div className="space-y-1">
-            {agents.map((agent, index) => (
-              <a
-                key={index}
-                href="#"
-                className="flex items-center p-2 rounded-lg transition-colors cursor-pointer"
-                style={{
-                  backgroundColor: 'transparent',
-                  // Hover effect logic
-                  '--tw-bg-opacity': 1,
-                }}
-                onMouseEnter={(e) => {
-                  const hoverBg = colors.SURFACE_BG === '#121e33' ? colors.BUBBLE_BG_SYSTEM : '#f3f4f6'; // Custom hover color
-                  e.currentTarget.style.backgroundColor = hoverBg; 
+        {/* Agents Section - Hidden when searching */}
+        {!isSearching && (
+          <div className="mb-6">
+            <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>Agents</h3>
+            <div className="space-y-1">
+              {agents.map((agent, index) => (
+                <a
+                  key={index}
+                  href="#"
+                  className="flex items-center p-2 rounded-lg transition-colors cursor-pointer"
+                  style={{
+                    backgroundColor: 'transparent',
+                    // Hover effect logic
+                    '--tw-bg-opacity': 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    const hoverBg = colors.SURFACE_BG === '#121e33' ? colors.BUBBLE_BG_SYSTEM : '#f3f4f6'; // Custom hover color
+                    e.currentTarget.style.backgroundColor = hoverBg; 
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = 'transparent';
@@ -375,26 +467,40 @@ const ExpandedSidebar = ({ agents, threads, onBack, onAddNewChat, onSelectChat, 
             ))}
           </div>
         </div>
+        )}
 
-        {/* Separator */}
-        <div className="my-2" style={{ borderTop: `1px solid ${colors.BORDER}` }}></div>
+        {/* Separator - Only show when not searching */}
+        {!isSearching && (
+          <div className="my-2" style={{ borderTop: `1px solid ${colors.BORDER}` }}></div>
+        )}
 
         {/* Previous Threads Section */}
         <div className="pr-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider mb-1 mt-3 text-left truncate" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>Previous Threads</h3>
-          {threads.map((group, index) => (
+          <h3 className="text-xs font-bold uppercase tracking-wider mb-1 mt-3 text-left truncate" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>
+            {isSearching ? `Search Results (${filteredThreads.reduce((sum, group) => sum + group.links.length, 0)})` : 'Previous Threads'}
+          </h3>
+          {(isSearching ? filteredThreads : threads).map((group, index) => (
             <div key={index} className="mb-4 overflow-hidden">
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-1 mt-3 text-left truncate" style={{ color: colors.TEXT_LOW_CONTRAST }}>{group.group}</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wider mb-1 mt-3 text-left truncate" style={{ color: colors.TEXT_LOW_CONTRAST }}>
+                {group.group} {group.links.length > 0 && `(${group.links.length})`}
+              </h3>
               <div className="space-y-0.5 overflow-hidden">
                 {group.links.map((link, linkIndex) => {
+                  // Handle both formats: string links and thread objects
+                  const threadTitle = typeof link === 'string' ? link : link.title;
+                  const threadId = typeof link === 'string' ? null : link.id;
+                  
                   // Find the corresponding chat for this link
-                  const correspondingChat = chats.find(chat => chat.title === link);
+                  const correspondingChat = threadId ? 
+                    chats.find(chat => chat.id === threadId) : 
+                    chats.find(chat => chat.title === threadTitle);
+                    
                   return (
                     <div key={linkIndex} className="w-full overflow-hidden">
                       <ThreadLink 
                         onClick={() => correspondingChat && onSelectChat(correspondingChat.id)}
                       >
-                        {link}
+                        {threadTitle}
                       </ThreadLink>
                     </div>
                   );
@@ -402,6 +508,22 @@ const ExpandedSidebar = ({ agents, threads, onBack, onAddNewChat, onSelectChat, 
               </div>
             </div>
           ))}
+          
+          {/* No results message */}
+          {isSearching && filteredThreads.length === 0 && (
+            <div className="text-center py-8">
+              <div className="text-sm" style={{ color: colors.TEXT_LOW_CONTRAST }}>
+                No threads found matching "{searchQuery}"
+              </div>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="mt-2 text-xs hover:underline"
+                style={{ color: colors.PRIMARY_COLOR }}
+              >
+                Clear search
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -995,7 +1117,7 @@ const MainContent = ({ userQuestion, currentChat, onUpdateChatTitle, refreshTrig
           <button
             onClick={handleSendMessage}
             className="mr-3 cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ color: (inputValue.trim() && !isStreaming) ? colors.PRIMARY_COLOR : colors.TEXT_LOW_CONTRAST }}
+            style={{ color: colors.TEXT_HIGH_CONTRAST }}
             disabled={!inputValue.trim() || isStreaming}
           >
             <Send size={24} />

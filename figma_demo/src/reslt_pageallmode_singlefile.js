@@ -173,18 +173,44 @@ const ActionIcons = () => {
 
 const ExpandedSidebar = ({ agents, threads }) => {
   const { colors } = useTheme();
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Filter threads based on search query
+  const getFilteredThreads = () => {
+    if (!searchQuery.trim()) {
+      return threads;
+    }
+    
+    return threads.map(group => ({
+      ...group,
+      links: group.links.filter(link =>
+        link.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    })).filter(group => group.links.length > 0);
+  };
+  
+  const filteredThreads = getFilteredThreads();
+  const isSearching = searchQuery.trim().length > 0;
   
   const ThreadLink = ({ children }) => (
     <a
       href="#"
-      className="flex items-start p-1.5 rounded-lg text-sm transition-colors"
+      title={children}
+      className="flex items-start p-2 rounded-lg text-sm transition-all duration-200 cursor-pointer hover:opacity-80"
       style={{
         color: colors.PRIMARY_COLOR, // Thread links use primary blue in both modes
-        backgroundColor: colors.SURFACE_BG === '#121e33' ? 'transparent' : 'white', // Base background
+        backgroundColor: 'transparent', // Base background
+      }}
+      onMouseEnter={(e) => {
+        const hoverBg = colors.SURFACE_BG === '#121e33' ? colors.BUBBLE_BG_SYSTEM : '#f3f4f6';
+        e.currentTarget.style.backgroundColor = hoverBg;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = 'transparent';
       }}
     >
       <MessageSquare size={16} style={{ color: colors.PRIMARY_COLOR }} className="mr-2 mt-0.5 flex-shrink-0" />
-      <span className="truncate hover:underline">{children}</span>
+      <span className="truncate hover:underline min-w-0 flex-1">{children}</span>
     </a>
   );
 
@@ -194,7 +220,9 @@ const ExpandedSidebar = ({ agents, threads }) => {
       <div className="mt-4 mb-4 relative">
         <input
           type="text"
-          placeholder="Search"
+          placeholder="Search previous threads..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-2 text-sm rounded-lg focus:ring-0 focus:border-blue-500"
           style={{
             backgroundColor: colors.BUBBLE_BG_SYSTEM,
@@ -203,22 +231,32 @@ const ExpandedSidebar = ({ agents, threads }) => {
           }}
         />
         <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: colors.TEXT_LOW_CONTRAST }} />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 hover:opacity-80"
+            style={{ color: colors.TEXT_LOW_CONTRAST }}
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {/* Agents Section */}
-      <div className="mb-6">
-        <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>Agents</h3>
-        <div className="space-y-1">
-          {agents.map((agent, index) => (
-            <a
-              key={index}
-              href="#"
-              className="flex items-center p-2 rounded-lg transition-colors cursor-pointer"
-              style={{
-                backgroundColor: 'transparent',
-                // Hover effect logic
-                '--tw-bg-opacity': 1,
-              }}
+      {/* Agents Section - Hidden when searching */}
+      {!isSearching && (
+        <div className="mb-6">
+          <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>Agents</h3>
+          <div className="space-y-1">
+            {agents.map((agent, index) => (
+              <a
+                key={index}
+                href="#"
+                className="flex items-center p-2 rounded-lg transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: 'transparent',
+                  // Hover effect logic
+                  '--tw-bg-opacity': 1,
+                }}
               onMouseEnter={(e) => {
                 const hoverBg = colors.SURFACE_BG === '#121e33' ? colors.BUBBLE_BG_SYSTEM : '#f3f4f6'; // Custom hover color
                 e.currentTarget.style.backgroundColor = hoverBg; 
@@ -233,16 +271,23 @@ const ExpandedSidebar = ({ agents, threads }) => {
           ))}
         </div>
       </div>
+      )}
 
-      {/* Separator */}
-      <div className="my-2" style={{ borderTop: `1px solid ${colors.BORDER}` }}></div>
+      {/* Separator - Only show when not searching */}
+      {!isSearching && (
+        <div className="my-2" style={{ borderTop: `1px solid ${colors.BORDER}` }}></div>
+      )}
 
       {/* Previous Threads Section */}
       <div className="flex-grow overflow-y-visible pr-2">
-        <h3 className="text-xs font-bold uppercase tracking-wider mb-1 mt-3" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>Previous Threads</h3>
-        {threads.map((group, index) => (
+        <h3 className="text-xs font-bold uppercase tracking-wider mb-1 mt-3" style={{ color: colors.TEXT_MEDIUM_CONTRAST }}>
+          {isSearching ? `Search Results (${filteredThreads.reduce((sum, group) => sum + group.links.length, 0)})` : 'Previous Threads'}
+        </h3>
+        {(isSearching ? filteredThreads : threads).map((group, index) => (
           <div key={index} className="mb-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider mb-1 mt-3" style={{ color: colors.TEXT_LOW_CONTRAST }}>{group.group}</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider mb-1 mt-3" style={{ color: colors.TEXT_LOW_CONTRAST }}>
+              {group.group} {group.links.length > 0 && `(${group.links.length})`}
+            </h3>
             <div className="space-y-0.5">
               {group.links.map((link, linkIndex) => (
                 <ThreadLink key={linkIndex}>{link}</ThreadLink>
@@ -250,6 +295,22 @@ const ExpandedSidebar = ({ agents, threads }) => {
             </div>
           </div>
         ))}
+        
+        {/* No results message */}
+        {isSearching && filteredThreads.length === 0 && (
+          <div className="text-center py-8">
+            <div className="text-sm" style={{ color: colors.TEXT_LOW_CONTRAST }}>
+              No threads found matching "{searchQuery}"
+            </div>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="mt-2 text-xs hover:underline"
+              style={{ color: colors.PRIMARY_COLOR }}
+            >
+              Clear search
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -606,7 +667,7 @@ const MainContent = () => {
             className="flex-grow text-lg focus:outline-none bg-transparent"
             style={{ color: colors.TEXT_HIGH_CONTRAST }}
           />
-          <Send size={24} className="mr-3 cursor-pointer hover:opacity-80" style={{ color: colors.TEXT_LOW_CONTRAST }} />
+          <Send size={24} className="mr-3 cursor-pointer hover:opacity-80" style={{ color: colors.TEXT_HIGH_CONTRAST }} />
           <Mic size={24} className="cursor-pointer hover:opacity-80" style={{ color: colors.TEXT_LOW_CONTRAST }} />
         </div>
       </div>
