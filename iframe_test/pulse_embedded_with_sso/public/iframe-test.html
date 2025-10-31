@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iframe Dropdown Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .iframe-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        iframe {
+            width: 100%;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+        h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .test-info {
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2861BB;
+        }
+        .instructions {
+            background: #fff9e6;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Iframe Dropdown Visibility Test</h1>
+        
+        <div class="test-info">
+            <h3>Test Objective:</h3>
+            <p>Verify that the dropdown suggestions are visible within iframe constraints when clicking on the search input.</p>
+        </div>
+
+        <div class="instructions">
+            <h3>Test Instructions:</h3>
+            <ol>
+                <li>Click on the search input in the iframe below</li>
+                <li>Check if the "Previous Conversations" dropdown appears</li>
+                <li>Verify the dropdown is positioned correctly and visible within the iframe</li>
+                <li>Try typing to trigger suggestions</li>
+                <li>Click on predefined questions to test form submission</li>
+            </ol>
+        </div>
+
+        <!-- Small iframe to test constrained environment -->
+        <div class="iframe-container">
+            <h2>Small Iframe (400px height) - Most Constrained</h2>
+            <iframe src="/pulseembedded" height="400" title="PulseEmbedded Small"></iframe>
+        </div>
+
+        <!-- Medium iframe -->
+        <div class="iframe-container">
+            <h2>Medium Iframe (600px height) - Moderate Constraints</h2>
+            <iframe src="/pulseembedded" height="600" title="PulseEmbedded Medium"></iframe>
+        </div>
+
+        <!-- Large iframe -->
+        <div class="iframe-container">
+            <h2>Large Iframe (800px height) - Less Constrained</h2>
+            <iframe src="/pulseembedded" height="800" title="PulseEmbedded Large"></iframe>
+        </div>
+
+        <div class="test-info">
+            <h3>Expected Behavior:</h3>
+            <ul>
+                <li><strong>Dropdown Positioning:</strong> In iframe context, dropdown should use fixed positioning from bottom of viewport</li>
+                <li><strong>Size Adaptation:</strong> Reduced height (150px max) and padding for iframe context</li>
+                <li><strong>Visibility:</strong> Dropdown should be fully visible regardless of iframe size</li>
+                <li><strong>Form Submission:</strong> Clicking questions should break out of iframe using target="_top"</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

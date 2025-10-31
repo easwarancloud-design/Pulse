@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulseEmbedded - HTML Form with POST Method Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .demo-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 0;
+            color: #555;
+            font-size: 1.2em;
+        }
+        
+        .status-badges {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .badge {
+            background: #27ae60;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .badge.html-form {
+            background: #e74c3c;
+        }
+        
+        .badge.iframe-breakout {
+            background: #f39c12;
+        }
+        
+        .badge.post-method {
+            background: #9b59b6;
+        }
+        
+        .demo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .demo-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .panel-header {
+            background: #34495e;
+            color: white;
+            padding: 15px 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .panel-content {
+            padding: 20px;
+        }
+        
+        iframe {
+            width: 100%;
+            height: 500px;
+            border: none;
+            border-radius: 10px;
+        }
+        
+        .code-snippet {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        
+        .highlight {
+            background: #f39c12;
+            color: #2c3e50;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        .features-list {
+            list-style: none;
+            padding: 0;
+            margin: 15px 0;
+        }
+        
+        .features-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #ecf0f1;
+            color: #555;
+        }
+        
+        .features-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .features-list li::before {
+            content: "✓";
+            color: #27ae60;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .test-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .test-section h2 {
+            margin: 0 0 20px 0;
+            color: #2c3e50;
+            font-size: 1.8em;
+        }
+        
+        .test-instructions {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .test-instructions h3 {
+            margin: 0 0 15px 0;
+            color: #7a5f2a;
+        }
+        
+        .test-instructions ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .test-instructions li {
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+        
+        @media (max-width: 768px) {
+            .demo-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-badges {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <div class="header">
+            <h1>🎯 HTML Form with POST Method Implementation</h1>
+            <p>PulseEmbedded component now includes proper HTML form tags with iframe breakout functionality</p>
+            
+            <div class="status-badges">
+                <div class="badge html-form">
+                    🏷️ HTML &lt;form&gt; Tag Present
+                </div>
+                <div class="badge post-method">
+                    📤 POST Method Enabled
+                </div>
+                <div class="badge iframe-breakout">
+                    🚀 Iframe Breakout via target="_top"
+                </div>
+            </div>
+        </div>
+        
+        <div class="demo-grid">
+            <div class="demo-panel">
+                <div class="panel-header">
+                    <span>📋 HTML Form Structure</span>
+                </div>
+                <div class="panel-content">
+                    <h3>Visible Search Form</h3>
+                    <div class="code-snippet">
+&lt;<span class="highlight">form</span> onSubmit={handleSubmit}&gt;<br>
+&nbsp;&nbsp;&lt;<span class="highlight">input</span> type="text" name="searchQuery" /&gt;<br>
+&nbsp;&nbsp;&lt;<span class="highlight">button</span> type="submit"&gt;Send&lt;/button&gt;<br>
+&lt;/<span class="highlight">form</span>&gt;
+                    </div>
+                    
+                    <h3>Hidden POST Form</h3>
+                    <div class="code-snippet">
+&lt;<span class="highlight">form</span> action="/resultpage" method="<span class="highlight">POST</span>"&gt;<br>
+&nbsp;&nbsp;&lt;input type="hidden" name="searchQuery" /&gt;<br>
+&nbsp;&nbsp;&lt;input type="hidden" name="source" /&gt;<br>
+&nbsp;&nbsp;&lt;input type="hidden" name="threadId" /&gt;<br>
+&lt;/<span class="highlight">form</span>&gt;
+                    </div>
+                </div>
+            </div>
+            
+            <div class="demo-panel">
+                <div class="panel-header">
+                    <span>⚙️ Implementation Features</span>
+                </div>
+                <div class="panel-content">
+                    <ul class="features-list">
+                        <li>Visible HTML form element in DOM</li>
+                        <li>POST method for iframe breakout</li>
+                        <li>SessionStorage for data persistence</li>
+                        <li>Parent window navigation for iframes</li>
+                        <li>Form submission event handling</li>
+                        <li>Hidden form fields for data transport</li>
+                        <li>Fallback navigation support</li>
+                        <li>React form event integration</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h2>🧪 Live Demo</h2>
+            <iframe src="http://localhost:3000/pulseembedded" title="PulseEmbedded with HTML Forms"></iframe>
+            
+            <div class="test-instructions">
+                <h3>🔍 Inspect Element to See HTML Forms</h3>
+                <ol>
+                    <li><strong>Right-click on the search input</strong> → "Inspect Element"</li>
+                    <li><strong>Look for &lt;form&gt; tags</strong> - You'll see both visible and hidden forms</li>
+                    <li><strong>Check form attributes</strong> - method="POST", action="/resultpage"</li>
+                    <li><strong>Test predefined questions</strong> - Click any button to trigger form submission</li>
+                    <li><strong>Verify iframe breakout</strong> - Forms use sessionStorage + parent navigation</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

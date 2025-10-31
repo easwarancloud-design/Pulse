@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iframe Host Test - localhost:3003</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            margin: 0 0 10px 0;
+            color: #122F65;
+            font-size: 24px;
+        }
+        
+        .header p {
+            margin: 0;
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .iframe-container {
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #122F65;
+            border-radius: 8px;
+        }
+        
+        .instructions {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .test-info {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            background: #28a745;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖼️ Iframe Host Test Page</h1>
+            <p><span class="status">localhost:3003</span> hosting iframe with <strong>localhost:3000/pulseembedded</strong></p>
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 Test Instructions:</h3>
+            <ol>
+                <li><strong>Current URL:</strong> This page is running on localhost:3003 (simulated)</li>
+                <li><strong>Iframe Content:</strong> The iframe below contains localhost:3000/pulseembedded</li>
+                <li><strong>Test the back navigation:</strong>
+                    <ul>
+                        <li>Click any predefined question in the iframe</li>
+                        <li>Go to the result page</li>
+                        <li>Click the back button</li>
+                        <li>It should return to localhost:3003 (this page) instead of /pulseembedded</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+        
+        <div class="iframe-container">
+            <iframe 
+                src="http://localhost:3000/pulseembedded" 
+                title="PulseEmbedded in iframe"
+                allow="fullscreen"
+            ></iframe>
+        </div>
+        
+        <div class="test-info">
+            <h4>🎯 Expected Behavior:</h4>
+            <p><strong>Before fix:</strong> Back button would redirect to /pulseembedded</p>
+            <p><strong>After fix:</strong> Back button should redirect to localhost:3003 (this page)</p>
+            <p><strong>Note:</strong> Since this is a local file, it simulates localhost:3003. In a real scenario, you would serve this file from a local server on port 3003.</p>
+        </div>
+    </div>
+    
+    <script>
+        // Log when iframe loads to confirm the setup
+        document.querySelector('iframe').onload = function() {
+            console.log('✅ Iframe loaded successfully with PulseEmbedded component');
+            console.log('🔍 Current host origin:', window.location.origin);
+            console.log('📍 Iframe source:', this.src);
+        };
+        
+        // Listen for messages from iframe (optional debugging)
+        window.addEventListener('message', function(event) {
+            console.log('📨 Message from iframe:', event.data);
+        });
+    </script>
+</body>
+</html>

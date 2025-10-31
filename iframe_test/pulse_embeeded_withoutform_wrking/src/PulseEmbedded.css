@@ -1,0 +1,66 @@
+/* PulseEmbedded specific styles for iframe optimization */
+
+/* Ensure no scrollbars appear in iframe */
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+}
+
+/* Hide scrollbars but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}
+
+/* Responsive adjustments for iframe */
+@media (max-width: 768px) {
+  .pulse-embedded-container {
+    padding: clamp(12px, 3vw, 24px) clamp(12px, 8vw, 64px) 16px clamp(12px, 8vw, 64px) !important;
+  }
+  
+  .pulse-embedded-title {
+    font-size: clamp(16px, 4vw, 20px) !important;
+  }
+  
+  .pulse-embedded-input {
+    font-size: clamp(12px, 3vw, 18px) !important;
+  }
+  
+  .pulse-embedded-button-text {
+    font-size: clamp(8px, 2vw, 14px) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .pulse-embedded-questions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  
+  .pulse-embedded-question-button {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+}
+
+/* Ensure text is readable in small iframes */
+@media (max-height: 400px) {
+  .pulse-embedded-container {
+    gap: 16px !important;
+  }
+  
+  .pulse-embedded-title {
+    margin-bottom: 16px !important;
+  }
+  
+  .pulse-embedded-questions-container {
+    margin-top: 16px !important;
+  }
+}

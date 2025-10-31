@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pulse Embedded Demo - Parent Application</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .iframe-container {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        
+        #pulseFrame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .message-log {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .message-log h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .message {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .message-time {
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        
+        .instructions {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .clear-log {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+        
+        .clear-log:hover {
+            background: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pulse Embedded Component Demo</h1>
+        
+        <div class="instructions">
+            <h3>📋 Instructions - Updated with Form Submission</h3>
+            <p>This demonstrates how the Pulse search component can be embedded as an iframe and break out to full page:</p>
+            <ul>
+                <li><strong>Type in the search field</strong> and press Enter or click the send button → Will break out to full result page</li>
+                <li><strong>Click on the predefined question buttons</strong> → Will break out and pre-fill the input field</li>
+                <li><strong>Click on suggestion items</strong> → Will break out and load the specific conversation</li>
+                <li><strong>Use the refresh button</strong> to cycle through different question sets</li>
+                <li>All interactions will break out of the iframe and show the full application</li>
+                <li><em>Note: The iframe will redirect to the full page - this is the intended behavior</em></li>
+            </ul>
+        </div>
+        
+        <div class="iframe-container">
+            <iframe 
+                id="pulseFrame" 
+                src="http://localhost:3000/pulseembedded"
+                title="Pulse Embedded Search">
+            </iframe>
+        </div>
+        
+        <div class="message-log">
+            <h3>📨 Iframe Status Monitor</h3>
+            <button class="clear-log" onclick="clearLog()">Clear Log</button>
+            <div id="messageContainer">
+                <div class="message">
+                    <div class="message-time">Ready to test iframe breakout...</div>
+                    <div>Interact with the embedded component above. When you click buttons or submit searches, 
+                    the iframe will break out and navigate to the full result page. This is the intended behavior for 
+                    the form-based POST approach.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Monitor iframe navigation
+        const iframe = document.getElementById('pulseFrame');
+        
+        iframe.addEventListener('load', function() {
+            logMessage({
+                type: 'IFRAME_LOADED',
+                url: iframe.contentWindow?.location?.href || 'Unknown',
+                timestamp: new Date().toISOString()
+            });
+        });
+
+        // Listen for any messages (fallback - shouldn't be used with form approach)
+        window.addEventListener('message', function(event) {
+            logMessage({
+                type: 'POSTMESSAGE_RECEIVED',
+                data: event.data,
+                origin: event.origin
+            });
+        });
+        
+        function logMessage(data) {
+            const container = document.getElementById('messageContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            const time = new Date().toLocaleTimeString();
+            const messageData = JSON.stringify(data, null, 2);
+            
+            messageDiv.innerHTML = `
+                <div class="message-time">${time}</div>
+                <div>${messageData}</div>
+            `;
+            
+            // Add to top of container
+            container.insertBefore(messageDiv, container.firstChild);
+            
+            // Remove the "ready" message if it exists
+            const readyMessage = container.querySelector('.message:last-child');
+            if (readyMessage && readyMessage.textContent.includes('Ready to test')) {
+                readyMessage.remove();
+            }
+            
+            // Keep only last 10 messages
+            const messages = container.querySelectorAll('.message');
+            if (messages.length > 10) {
+                messages[messages.length - 1].remove();
+            }
+        }
+        
+        function clearLog() {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `
+                <div class="message">
+                    <div class="message-time">Log cleared</div>
+                    <div>Ready to test iframe breakout functionality.</div>
+                </div>
+            `;
+        }
+        
+        // Handle iframe load errors
+        iframe.addEventListener('error', function() {
+            console.error('Failed to load iframe. Make sure the React app is running on http://localhost:3000');
+            logMessage({
+                type: 'IFRAME_ERROR',
+                message: 'Failed to load iframe'
+            });
+        });
+    </script>
+</body>
+</html>

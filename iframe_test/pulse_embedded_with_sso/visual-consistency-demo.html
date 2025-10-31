@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Main Page vs Embedded - Visual Consistency Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 0;
+            margin: 0;
+            background: #f0f2f5;
+        }
+        
+        .demo-header {
+            background: #2c3e50;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .demo-header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .demo-header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .comparison-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            height: calc(100vh - 120px);
+        }
+        
+        .demo-panel {
+            position: relative;
+            border: 3px solid #34495e;
+        }
+        
+        .demo-panel.left {
+            border-right: 1.5px solid #34495e;
+        }
+        
+        .demo-panel.right {
+            border-left: 1.5px solid #34495e;
+        }
+        
+        .panel-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(52, 73, 94, 0.95);
+            color: white;
+            padding: 10px 20px;
+            z-index: 1000;
+            font-weight: 600;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+        
+        .feature-highlights {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        
+        .feature-highlights h3 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+            font-size: 1.1em;
+        }
+        
+        .feature-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 0.9em;
+        }
+        
+        .feature-item {
+            color: #27ae60;
+            font-weight: 500;
+        }
+        
+        .feature-item:before {
+            content: "✓ ";
+            margin-right: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .comparison-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+            }
+            
+            .demo-panel.left {
+                border-right: 3px solid #34495e;
+                border-bottom: 1.5px solid #34495e;
+            }
+            
+            .demo-panel.right {
+                border-left: 3px solid #34495e;
+                border-top: 1.5px solid #34495e;
+            }
+            
+            .feature-list {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-header">
+        <h1>🎨 Visual Consistency Achieved!</h1>
+        <p>Main Page Theme vs Embedded Component - Identical Styling</p>
+    </div>
+    
+    <div class="comparison-container">
+        <div class="demo-panel left">
+            <div class="panel-header">
+                📄 Main Page (AISearchHero Component)
+            </div>
+            <iframe src="http://localhost:3000/" title="Main Page"></iframe>
+            <div class="feature-highlights">
+                <h3>Main Page Features</h3>
+                <div class="feature-list">
+                    <div class="feature-item">Gradient Background</div>
+                    <div class="feature-item">Welcome Message</div>
+                    <div class="feature-item">Star Icon Input</div>
+                    <div class="feature-item">Send/Mic Buttons</div>
+                    <div class="feature-item">Predefined Questions</div>
+                    <div class="feature-item">Refresh Icon</div>
+                    <div class="feature-item">Dropdown Styling</div>
+                    <div class="feature-item">Learn More Button</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="demo-panel right">
+            <div class="panel-header">
+                🚀 Embedded Component (/pulseembedded)
+            </div>
+            <iframe src="http://localhost:3000/pulseembedded" title="Embedded Component"></iframe>
+            <div class="feature-highlights">
+                <h3>Embedded Features (Identical)</h3>
+                <div class="feature-list">
+                    <div class="feature-item">Same Gradient Background</div>
+                    <div class="feature-item">Same Welcome Message</div>
+                    <div class="feature-item">Same Star Icon Input</div>
+                    <div class="feature-item">Same Send/Mic Buttons</div>
+                    <div class="feature-item">Same Question Styling</div>
+                    <div class="feature-item">Same Refresh Icon</div>
+                    <div class="feature-item">Same Dropdown Style</div>
+                    <div class="feature-item">Same Learn More Button</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

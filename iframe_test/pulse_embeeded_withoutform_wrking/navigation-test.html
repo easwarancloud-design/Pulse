@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navigation Test - All Scenarios</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #122F65;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .scenario-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 2px solid #122F65;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        
+        .scenario-title {
+            color: #122F65;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .test-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        
+        .test-description {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .test-links {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .test-link {
+            padding: 10px 15px;
+            background: #122F65;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            text-align: center;
+            transition: background 0.3s ease;
+        }
+        
+        .test-link:hover {
+            background: #1e4a8c;
+        }
+        
+        .iframe-container {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #122F65;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+        
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .instructions {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status.embedded {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .status.iframe {
+            background: #FF9800;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Navigation Test - All 6 Scenarios</h1>
+        
+        <div class="instructions">
+            <h3>📋 Test Instructions:</h3>
+            <p><strong>For each scenario:</strong></p>
+            <ol>
+                <li>Click the test link to go to the page</li>
+                <li>Try the specific interaction (predefined question, manual search, or dropdown selection)</li>
+                <li>Verify it routes to the result page correctly</li>
+                <li>Click the back button to ensure proper navigation</li>
+            </ol>
+        </div>
+
+        <!-- Scenario 1 & 2: Pulse Embedded Page -->
+        <div class="scenario-section">
+            <div class="scenario-title">
+                <span class="status embedded">EMBEDDED</span>
+                Pulse Embedded Page Tests (Scenarios 1, 2, 6)
+            </div>
+            <div class="test-grid">
+                <div class="test-item">
+                    <div class="test-description">1) Predefined Question → Result Page</div>
+                    <p>Click any of the 3 predefined question buttons. Should route to result page and show question in input field.</p>
+                    <div class="test-links">
+                        <a href="http://localhost:3000/pulseembedded" class="test-link" target="_blank">
+                            🔗 Open Pulse Embedded Page
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="test-item">
+                    <div class="test-description">2) Manual Question → Result Page</div>
+                    <p>Type a manual question and submit. Should route to result page and open new chat with response.</p>
+                    <div class="test-links">
+                        <a href="http://localhost:3000/pulseembedded" class="test-link" target="_blank">
+                            🔗 Open Pulse Embedded Page
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="test-item">
+                    <div class="test-description">6) Dropdown Selection → Result Page</div>
+                    <p>Click the search input to open dropdown, select any conversation title. Should route to result page and show conversation.</p>
+                    <div class="test-links">
+                        <a href="http://localhost:3000/pulseembedded" class="test-link" target="_blank">
+                            🔗 Open Pulse Embedded Page
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scenario 3, 4, 5: Pulse Page (iframe) -->
+        <div class="scenario-section">
+            <div class="scenario-title">
+                <span class="status iframe">IFRAME</span>
+                Pulse Page in iframe Tests (Scenarios 3, 4, 5)
+            </div>
+            <div class="test-grid">
+                <div class="test-item">
+                    <div class="test-description">3) Predefined Question → Result Page</div>
+                    <p>In the iframe below, click any predefined question button. Should route to result page and show question in input.</p>
+                </div>
+                
+                <div class="test-item">
+                    <div class="test-description">4) Manual Question → Result Page</div>
+                    <p>In the iframe below, type a manual question and submit. Should route to result page and open new chat.</p>
+                </div>
+                
+                <div class="test-item">
+                    <div class="test-description">5) Dropdown Selection → Result Page</div>
+                    <p>In the iframe below, click search input to open dropdown, select a conversation. Should route to result page and show conversation.</p>
+                </div>
+            </div>
+            
+            <div class="iframe-container">
+                <iframe src="http://localhost:3000/pulse" title="Pulse Page in iframe"></iframe>
+            </div>
+        </div>
+        
+        <!-- Additional Test Links -->
+        <div class="scenario-section">
+            <div class="scenario-title">🔧 Additional Test Links</div>
+            <div class="test-grid">
+                <div class="test-item">
+                    <div class="test-description">Direct Backend Test</div>
+                    <p>Test the FastAPI backend directly:</p>
+                    <div class="test-links">
+                        <a href="http://localhost:8000/" class="test-link" target="_blank">
+                            🔗 Backend Health Check
+                        </a>
+                        <a href="http://localhost:8000/docs" class="test-link" target="_blank">
+                            📋 Backend API Docs
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="test-item">
+                    <div class="test-description">React App Pages</div>
+                    <p>Access all React app pages:</p>
+                    <div class="test-links">
+                        <a href="http://localhost:3000/" class="test-link" target="_blank">
+                            🏠 Main Page
+                        </a>
+                        <a href="http://localhost:3000/pulse" class="test-link" target="_blank">
+                            📱 Pulse Page (for iframe)
+                        </a>
+                        <a href="http://localhost:3000/pulseembedded" class="test-link" target="_blank">
+                            💻 Pulse Embedded Page
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Expected Results -->
+        <div class="scenario-section">
+            <div class="scenario-title">✅ Expected Results</div>
+            <div style="background: white; padding: 15px; border-radius: 8px;">
+                <h4>For ALL scenarios, the following should happen:</h4>
+                <ul>
+                    <li><strong>Predefined Questions:</strong> Result page shows the question in the search input field</li>
+                    <li><strong>Manual Questions:</strong> Result page shows new chat conversation with user question and assistant response</li>
+                    <li><strong>Dropdown Selections:</strong> Result page shows the selected conversation thread</li>
+                    <li><strong>Back Navigation:</strong> 
+                        <ul>
+                            <li>From embedded contexts: Back button returns to /pulseembedded</li>
+                            <li>From iframe contexts: Back button returns to /pulse</li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

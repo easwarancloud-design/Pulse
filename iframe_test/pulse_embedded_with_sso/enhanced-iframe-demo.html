@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Pulse Iframe with Full Main Page Functionality</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 20px;
+            font-weight: 300;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .feature-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feature-card h3 {
+            margin-top: 0;
+            color: #333;
+            font-size: 1.2em;
+        }
+        
+        .feature-card ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .feature-card li {
+            margin: 5px 0;
+            color: #555;
+        }
+        
+        .iframe-container {
+            border: 3px solid #667eea;
+            border-radius: 15px;
+            overflow: hidden;
+            background: #f0f0f0;
+            margin: 30px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        iframe {
+            width: 100%;
+            height: 500px;
+            border: none;
+            display: block;
+        }
+        
+        .test-instructions {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            border: 2px solid #667eea;
+            padding: 25px;
+            margin: 30px 0;
+            border-radius: 15px;
+        }
+        
+        .test-instructions h3 {
+            margin-top: 0;
+            color: #333;
+            font-size: 1.4em;
+        }
+        
+        .test-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .test-step {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .test-step h4 {
+            margin-top: 0;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+        
+        .test-step p {
+            margin: 8px 0;
+            color: #555;
+            font-size: 0.95em;
+        }
+        
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 0.9em;
+        }
+        
+        .expected-result {
+            background: linear-gradient(135deg, #e8f5e8 0%, #f0fff0 100%);
+            border: 2px solid #4CAF50;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        
+        .expected-result h4 {
+            margin-top: 0;
+            color: #2e7d32;
+            font-size: 1.2em;
+        }
+        
+        .expected-result ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .expected-result li {
+            margin: 8px 0;
+            color: #2e7d32;
+        }
+        
+        .highlight {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .highlight strong {
+            color: #856404;
+        }
+        
+        .portal-demo {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffecb3 100%);
+            border: 2px solid #ff9800;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        
+        .portal-demo h4 {
+            margin-top: 0;
+            color: #e65100;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Enhanced Pulse Iframe Integration</h1>
+        <p class="subtitle">Complete Main Page Functionality + Portal Breakout Technology</p>
+        
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3>📋 Main Page Integration</h3>
+                <ul>
+                    <li>✅ Full thread loading (localStorage + static)</li>
+                    <li>✅ Real-time search filtering</li>
+                    <li>✅ Proper source tracking</li>
+                    <li>✅ Enhanced form submission</li>
+                </ul>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🎯 Portal Technology</h3>
+                <ul>
+                    <li>✅ Iframe boundary breakout</li>
+                    <li>✅ Cross-origin safety</li>
+                    <li>✅ Parent page rendering</li>
+                    <li>✅ High z-index overlay</li>
+                </ul>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🔄 Smart Functionality</h3>
+                <ul>
+                    <li>✅ Previous conversation loading</li>
+                    <li>✅ Predefined question cycling</li>
+                    <li>✅ Thread selection support</li>
+                    <li>✅ Manual search handling</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="portal-demo">
+            <h4>🌟 Portal Breakout Demo</h4>
+            <p><strong>The dropdown will appear OUTSIDE the iframe container below, demonstrating successful React Portal implementation that breaks iframe boundaries!</strong></p>
+        </div>
+        
+        <div class="iframe-container">
+            <iframe 
+                src="http://localhost:3000/pulseembedded" 
+                title="Enhanced Pulse Embedded App"
+                allowfullscreen>
+            </iframe>
+        </div>
+        
+        <div class="test-instructions">
+            <h3>🧪 Comprehensive Testing Guide</h3>
+            
+            <div class="test-steps">
+                <div class="test-step">
+                    <h4><span class="step-number">1</span>Search Input Test</h4>
+                    <p>Click in the search box inside the iframe</p>
+                    <p><strong>Expected:</strong> Dropdown breaks out above the iframe</p>
+                </div>
+                
+                <div class="test-step">
+                    <h4><span class="step-number">2</span>Previous Conversations</h4>
+                    <p>View conversations from localStorage + static data</p>
+                    <p><strong>Expected:</strong> Shows combined thread list</p>
+                </div>
+                
+                <div class="test-step">
+                    <h4><span class="step-number">3</span>Search Filtering</h4>
+                    <p>Type in search box to filter conversations</p>
+                    <p><strong>Expected:</strong> Real-time filtering like main page</p>
+                </div>
+                
+                <div class="test-step">
+                    <h4><span class="step-number">4</span>Predefined Questions</h4>
+                    <p>Click the refresh button and select questions</p>
+                    <p><strong>Expected:</strong> Cycles through 3 sets of questions</p>
+                </div>
+                
+                <div class="test-step">
+                    <h4><span class="step-number">5</span>Thread Selection</h4>
+                    <p>Click on a previous conversation</p>
+                    <p><strong>Expected:</strong> POST with threadId and source tracking</p>
+                </div>
+                
+                <div class="test-step">
+                    <h4><span class="step-number">6</span>Manual Search</h4>
+                    <p>Type query and press Enter or click send</p>
+                    <p><strong>Expected:</strong> POST with manual_search source</p>
+                </div>
+            </div>
+            
+            <div class="expected-result">
+                <h4>✅ Expected Portal Behavior</h4>
+                <ul>
+                    <li><strong>Dropdown Position:</strong> Centered at top of this parent page</li>
+                    <li><strong>Z-Index:</strong> Appears above all parent content (999999)</li>
+                    <li><strong>Width:</strong> 90vw with 600px max-width for optimal display</li>
+                    <li><strong>Styling:</strong> Maintains iframe component styling</li>
+                    <li><strong>Cross-Origin:</strong> Safe fallback to current document if needed</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="highlight">
+            <strong>🎯 Integration Success:</strong> This iframe now has ALL the functionality of the main page, including localStorage thread management, real-time search filtering, proper source tracking (manual_search, predefined, thread_selection), and enhanced form submission with Portal-based dropdown breakout!
+        </div>
+        
+        <div style="margin-top: 30px; padding: 25px; background: linear-gradient(135deg, #e1f5fe 0%, #f3e5f5 100%); border: 2px solid #01579b; border-radius: 15px;">
+            <h4 style="margin-top: 0; color: #01579b;">🔗 Form Submission Details</h4>
+            <p><strong>Target:</strong> <code>/resultpage</code> with <code>target="_top"</code> for iframe breakout</p>
+            <p><strong>Method:</strong> POST with hidden form fields</p>
+            <p><strong>Data Fields:</strong></p>
+            <ul>
+                <li><code>searchQuery</code> - The user's question or selected thread title</li>
+                <li><code>threadId</code> - For thread selection (null for new searches)</li>
+                <li><code>source</code> - One of: manual_search, predefined, thread_selection</li>
+                <li><code>timestamp</code> - ISO timestamp for tracking</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
