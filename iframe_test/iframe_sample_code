@@ -1,0 +1,46 @@
+import React, { useRef } from 'react';
+
+const IframeFormSubmit = () => {
+  const iframeRef = useRef(null);
+
+  const handleSubmit = (event) => {
+    // Optional: Prevent default React handling if you want to explicitly submit the form later
+    // event.preventDefault(); 
+    
+    // The form will automatically target the iframe named 'formresponse'
+    // when submitted, due to the 'target' attribute.
+    // If you need to programmatically submit:
+    // event.target.submit(); 
+  };
+
+  return (
+    <div>
+      <h1>Form Submission to Iframe</h1>
+      <form 
+        action="https://your-backend-api.com/submit-data" // Replace with your actual backend endpoint
+        method="POST" 
+        target="formresponse" // This links the form submission to the iframe below
+        onSubmit={handleSubmit}
+      >
+        <label htmlFor="name">Name:</label>
+        <input type="text" id="name" name="name" /><br /><br />
+
+        <label htmlFor="email">Email:</label>
+        <input type="email" id="email" name="email" /><br /><br />
+
+        <button type="submit">Submit</button>
+      </form>
+
+      <h2>Iframe Content:</h2>
+      <iframe 
+        name="formresponse" // The name must match the form's target attribute
+        ref={iframeRef} 
+        width="100%" 
+        height="300px" 
+        style={{ border: '1px solid #ccc' }}
+      ></iframe>
+    </div>
+  );
+};
+
+export default IframeFormSubmit;
