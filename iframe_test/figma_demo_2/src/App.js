@@ -1,47 +1,42 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { OktaProvider, useOktaAuth } from '@okta/okta-react';
-import { oktaAuth } from './oktaConfig';
-import PrivateRoute from './PrivateRoute';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import Mainpage from './Mainpage';
 import PulseMain from './PulseMain';
 import ChatPage from './ChatPage'; // Light mode
 import PulseEmbedded from './PulseEmbedded';
-import PulseEmbeddedOld from './PulseEmbeddedOld'; // Legacy frozen copy
+import PulseEmbeddedOld from './PulseEmbeddedOld';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import './App.css';
+import { Security, useOktaAuth } from '@okta/okta-react';
+import { oktaAuth } from './oktaConfig';
+import PrivateRoute from './PrivateRoute';
 
 function AppContent() {
-  const { authState, oktaAuth } = useOktaAuth();
-  const [userInfo, setUserInfo] = useState(null);
+  const { oktaAuth, authState } = useOktaAuth();
   const [userQuestion, setUserQuestion] = useState('');
   const [currentThread, setCurrentThread] = useState(null);
   const [isNewChat, setIsNewChat] = useState(false);
   const [isNewChatActive, setIsNewChatActive] = useState(false);
+  const [userInfo, setUserInfo] = useState(null);
   const { isDarkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
 
   // Extract user information when authenticated
-  React.useEffect(() => {
-    const getUserInfo = async () => {
-      if (authState?.isAuthenticated) {
-        try {
-          const user = await oktaAuth.getUser();
-          setUserInfo({
-            name: user.name || user.given_name || 'User',
-            email: user.email,
-            preferred_username: user.preferred_username,
-            given_name: user.given_name,
-            family_name: user.family_name,
-            domainId: user.preferred_username?.split('@')[0] || 'AG40333'
-          });
-        } catch (error) {
-          console.error('Error fetching user info:', error);
-        }
-      }
-    };
-    getUserInfo();
+  useEffect(() => {
+    if (authState?.isAuthenticated) {
+      oktaAuth.getUser().then((user) => {
+        setUserInfo({
+          name: user.name || user.given_name || 'User',
+          firstName: user.given_name,
+          lastName: user.family_name,
+          email: user.email,
+          fullName: `${user.given_name} ${user.family_name}`.trim(),
+          preferred_username: user.preferred_username,
+          domainId: (user?.preferred_username?.split('@')[0] || user?.email?.split('@')[0] || 'AG04333')
+        });
+      }).catch(console.error);
+    }
   }, [authState, oktaAuth]);
 
   // Handle URL parameters for result page
@@ -61,7 +56,7 @@ function AppContent() {
           setUserQuestion(query);
           setIsNewChat(true);
           setIsNewChatActive(true);
-          
+
           const newThread = {
             id: 'thread_' + Date.now(),
             title: 'New Chat',
@@ -73,7 +68,7 @@ function AppContent() {
           setUserQuestion('');
           setIsNewChat(false);
           setIsNewChatActive(false);
-          
+
           const newThread = {
             id: 'thread_' + Date.now(),
             title: query.length > 50 ? query.substring(0, 50) + '...' : query,
@@ -106,7 +101,7 @@ function AppContent() {
       setUserQuestion(question); // This will be used to pre-fill the input
       setIsNewChat(true);
       setIsNewChatActive(true);
-      
+
       const newThread = {
         id: 'thread_' + Date.now(),
         title: 'New Chat', // Start with "New Chat" title
@@ -118,7 +113,7 @@ function AppContent() {
       setUserQuestion(''); // Clear since we'll show response immediately
       setIsNewChat(false);
       setIsNewChatActive(false);
-      
+
       const newThread = {
         id: 'thread_' + Date.now(),
         title: question.length > 50 ? question.substring(0, 50) + '...' : question,
@@ -135,7 +130,7 @@ function AppContent() {
       setUserQuestion(question);
       setIsNewChat(false);
       setIsNewChatActive(false);
-      
+
       const newThread = {
         id: 'thread_' + Date.now(),
         title: question.length > 50 ? question.substring(0, 50) + '...' : question,
@@ -143,7 +138,7 @@ function AppContent() {
       };
       setCurrentThread(newThread);
     }
-    
+
     // Navigate to result page with parameters
     navigate(`/resultpage?${params.toString()}`);
   };
@@ -153,7 +148,7 @@ function AppContent() {
       // First check MenuSidebarDark for static data
       const staticThreads = getStaticThreadsData();
       let foundThread = staticThreads.find(thread => thread.id === conversationId);
-      
+
       if (!foundThread) {
         // Check localStorage for saved threads
         const stored = localStorage.getItem('chatThreads');
@@ -168,7 +163,7 @@ function AppContent() {
           foundThread = allStoredThreads.find(thread => thread.id === conversationId);
         }
       }
-      
+
       if (foundThread) {
         setCurrentThread(foundThread);
         setUserQuestion('');
@@ -246,7 +241,7 @@ function AppContent() {
     const fromIframe = urlParams.get('fromIframe') === 'true';
     const parentUrl = urlParams.get('parentUrl');
     const hasUrlParams = urlParams.has('query') || urlParams.has('type');
-    
+
     // Detect if we're currently in an iframe context
     const isInIframe = () => {
       try {
@@ -302,20 +297,20 @@ function AppContent() {
       title: 'New Chat',
       conversation: []
     };
-    
+
     setIsNewChat(true);
     setIsNewChatActive(true);
     setCurrentThread(newThread);
     setUserQuestion('');
-    
+
     // Navigate to result page for new chat
     navigate('/resultpage');
-    
+
     // Save the new thread to localStorage in the grouped format
     try {
       const stored = localStorage.getItem('chatThreads');
       let threadsData;
-      
+
       if (stored) {
         threadsData = JSON.parse(stored);
         // Ensure the structure exists
@@ -332,10 +327,10 @@ function AppContent() {
           last30Days: []
         };
       }
-      
+
       // Add the new thread to today's category
       threadsData.today.unshift(newThread);
-      
+
       localStorage.setItem('chatThreads', JSON.stringify(threadsData));
     } catch (error) {
       console.error('Error saving new thread to localStorage:', error);
@@ -357,53 +352,44 @@ function AppContent() {
 
   return (
     <Routes>
-      <Route 
-        path="/" 
+      <Route
+        path="/"
         element={
           <div className="App">
-            <Mainpage 
-              onSearch={navigateToResults} 
-              onNewChat={handleNewChat} 
-              userInfo={userInfo}
-            />
+            <Mainpage onSearch={navigateToResults} onNewChat={handleNewChat} userInfo={userInfo} />
           </div>
-        } 
+        }
       />
-      <Route 
-        path="/pulsemain" 
+      <Route
+        path="/pulsemain"
         element={
           <div className="App">
-            <PulseMain 
-              onSearch={navigateToResults} 
-              onNewChat={handleNewChat} 
-              userInfo={userInfo}
-            />
+            <PulseMain onSearch={navigateToResults} onNewChat={handleNewChat} userInfo={userInfo} />
           </div>
-        } 
+        }
       />
-      <Route 
-        path="/pulseembedded" 
+      <Route
+        path="/pulseembedded"
         element={
           <div className="App">
             <PulseEmbedded userInfo={userInfo} />
           </div>
-        } 
+        }
       />
-      {/* Legacy embedded route (keeps welcome + learn more UI). SSO protected via PrivateRoute wrapper */}
-      <Route 
-        path="/pulseembedded_old" 
+      <Route
+        path="/pulseembedded_old"
         element={
           <div className="App">
             <PulseEmbeddedOld userInfo={userInfo} />
           </div>
-        } 
+        }
       />
-      <Route 
-        path="/resultpage" 
+      <Route
+        path="/resultpage"
         element={
           <div className="App">
-            <ChatPage 
-              onBack={navigateToMain} 
+            <ChatPage
+              onBack={navigateToMain}
               userQuestion={userQuestion}
               onToggleTheme={toggleTheme}
               isDarkMode={isDarkMode}
@@ -416,7 +402,7 @@ function AppContent() {
               userInfo={userInfo}
             />
           </div>
-        } 
+        }
       />
     </Routes>
   );
@@ -424,15 +410,15 @@ function AppContent() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <Router>
-        <OktaProvider oktaAuth={oktaAuth}>
+    <BrowserRouter>
+      <Security oktaAuth={oktaAuth} restoreOriginalUri={() => {}}>
+        <ThemeProvider>
           <PrivateRoute>
             <AppContent />
           </PrivateRoute>
-        </OktaProvider>
-      </Router>
-    </ThemeProvider>
+        </ThemeProvider>
+      </Security>
+    </BrowserRouter>
   );
 }
 
