@@ -1,0 +1,18 @@
+# 1. Install Python dependencies
+pip install -r requirements.txt
+
+# 2. Set up MySQL database
+mysql -u root -p < database_schema.sql
+
+# 3. Configure environment variables
+cp .env.example .env
+# Edit .env with your database credentials
+
+# 4. Start Redis
+redis-server
+
+# 5. Run FastAPI application
+python app.py
+
+# Or with uvicorn directly:
+uvicorn app:app --reload --host 0.0.0.0 --port 8000

@@ -1,0 +1,91 @@
+from fastapi import APIRouter, HTTPException, Query
+from models.message import (
+    MessageCreate,
+    MessageResponse,
+    MessageListResponse,
+    MessageFeedback,
+    MessageFeedbackResponse
+)
+from services.conversation_service import ConversationService
+
+router = APIRouter(prefix="/messages", tags=["Messages"])
+service = ConversationService()
+
+@router.post("/", response_model=dict)
+async def create_message(data: MessageCreate):
+    """
+    Create a new message in a conversation
+    
+    - **conversation_id**: Conversation UUID (required)
+    - **domain_id**: User domain ID (required)
+    - **message_type**: Type of message (user/assistant/system/live_agent)
+    - **message_text**: Message text (required)
+    - **reference_links**: Optional list of reference links
+    """
+    try:
+        result = await service.store_message(data.dict())
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{conversation_id}", response_model=MessageListResponse)
+async def get_conversation_messages(
+    conversation_id: str,
+    domain_id: str = Query(..., description="User domain ID"),
+    include_links: bool = Query(True, description="Include reference links")
+):
+    """
+    Get all messages for a conversation
+    
+    - **conversation_id**: Conversation UUID
+    - **domain_id**: User domain ID
+    - **include_links**: Whether to include reference links
+    """
+    try:
+        result = await service.get_conversation_messages(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            include_links=include_links
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{message_id}/feedback", response_model=MessageFeedbackResponse)
+async def update_message_feedback(message_id: int, data: MessageFeedback):
+    """
+    Update message feedback (like/dislike)
+    
+    - **message_id**: Message ID
+    - **domain_id**: User domain ID (required)
+    - **liked**: -1 (dislike), 0 (neutral), 1 (like)
+    - **feedback_text**: Optional feedback text
+    """
+    try:
+        result = await service.update_message_feedback(
+            domain_id=data.domain_id,
+            message_id=message_id,
+            liked=data.liked,
+            feedback_text=data.feedback_text
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/activity")
+async def refresh_activity(domain_id: str = Query(...), conversation_id: str = Query(None)):
+    """
+    Refresh user activity (extends Redis TTL)
+    
+    - **domain_id**: User domain ID (required)
+    - **conversation_id**: Optional conversation ID
+    """
+    try:
+        await service.refresh_user_activity(domain_id, conversation_id)
+        return {
+            "domain_id": domain_id,
+            "ttl_refreshed": True,
+            "expires_in_seconds": 900
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

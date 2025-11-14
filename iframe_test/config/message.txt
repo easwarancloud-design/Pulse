@@ -1,0 +1,57 @@
+from pydantic import BaseModel, Field
+from typing import Optional, List, Literal
+from datetime import datetime
+
+class ReferenceLink(BaseModel):
+    """Model for reference link"""
+    url: str
+    title: Optional[str] = None
+    source_type: Optional[str] = None
+
+class MessageCreate(BaseModel):
+    """Request model for creating a message"""
+    conversation_id: str = Field(..., min_length=36, max_length=36)
+    domain_id: str = Field(..., min_length=1, max_length=50)
+    message_type: Literal['user', 'assistant', 'system', 'live_agent']
+    message_text: str = Field(..., min_length=1)
+    original_text: Optional[str] = None
+    chat_id: Optional[str] = Field(None, max_length=100)
+    is_live_agent: bool = False
+    agent_name: Optional[str] = Field(None, max_length=100)
+    reference_links: Optional[List[ReferenceLink]] = []
+
+class MessageResponse(BaseModel):
+    """Response model for message"""
+    message_id: int
+    conversation_id: str
+    chat_id: Optional[str]
+    message_type: str
+    message_text: str
+    original_text: Optional[str]
+    created_at: datetime
+    is_live_agent: bool
+    agent_name: Optional[str]
+    liked: int
+    feedback_text: Optional[str]
+    feedback_at: Optional[datetime]
+    reference_links: Optional[List[dict]] = []
+
+class MessageListResponse(BaseModel):
+    """Response model for message list"""
+    conversation_id: str
+    total_messages: int
+    messages: List[MessageResponse]
+    from_cache: bool
+
+class MessageFeedback(BaseModel):
+    """Request model for message feedback"""
+    domain_id: str = Field(..., min_length=1, max_length=50)
+    liked: int = Field(..., ge=-1, le=1)  # -1, 0, or 1
+    feedback_text: Optional[str] = None
+
+class MessageFeedbackResponse(BaseModel):
+    """Response model for feedback update"""
+    message_id: int
+    liked: int
+    feedback_at: datetime
+    cache_updated: bool

@@ -1,0 +1,23 @@
+backend/
+├── app.py                              # Main FastAPI application
+├── requirements.txt                    # Python dependencies
+├── config/
+│   ├── __init__.py
+│   ├── settings.py                    # Configuration settings
+│   └── database.py                    # Database connections
+├── models/
+│   ├── __init__.py
+│   ├── conversation.py                # Pydantic models
+│   └── message.py                     # Pydantic models
+├── services/
+│   ├── __init__.py
+│   ├── mysql_service.py               # MySQL operations
+│   ├── redis_service.py               # Redis operations
+│   └── conversation_service.py        # Business logic
+├── api/
+│   ├── __init__.py
+│   ├── conversation_routes.py         # Conversation endpoints
+│   └── message_routes.py              # Message endpoints
+└── utils/
+    ├── __init__.py
+    └── helpers.py                     # Helper functions

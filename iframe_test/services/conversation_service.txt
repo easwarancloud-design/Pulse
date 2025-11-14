@@ -1,0 +1,529 @@
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+import uuid
+import json
+from .mysql_service import MySQLService
+from .redis_service import RedisService
+from config.settings import settings
+
+class ConversationService:
+    """Business logic for conversation operations"""
+    
+    def __init__(self):
+        self.mysql = MySQLService()
+        self.redis = RedisService()
+        self.TTL = settings.REDIS_TTL_SECONDS
+    
+    async def create_conversation(
+        self,
+        domain_id: str,
+        title: str,
+        session_id: Optional[str] = None,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+        email: Optional[str] = None,
+        initial_message: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Create new conversation"""
+        
+        conversation_id = str(uuid.uuid4())
+        
+        # Insert conversation
+        await self.mysql.execute(
+            """
+            INSERT INTO conversations 
+            (conversation_id, domain_id, title, session_id, first_name, last_name, email, message_count)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (conversation_id, domain_id, title, session_id, first_name, last_name, email, 
+             1 if initial_message else 0)
+        )
+        
+        # Store initial message if provided
+        message_id = None
+        if initial_message:
+            initial_message['conversation_id'] = conversation_id
+            initial_message['domain_id'] = domain_id
+            message_result = await self.store_message(initial_message)
+            message_id = message_result['message_id']
+        
+        # Cache to Redis
+        await self._cache_conversation_to_redis(domain_id, conversation_id)
+        await self.refresh_user_activity(domain_id, conversation_id)
+        
+        return {
+            "conversation_id": conversation_id,
+            "title": title,
+            "message_id": message_id,
+            "created_at": datetime.utcnow()
+        }
+    
+    async def store_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Store a new message"""
+        
+        conversation_id = message_data['conversation_id']
+        domain_id = message_data['domain_id']
+        
+        # Extract reference links
+        links = message_data.pop('reference_links', [])
+        
+        # Insert message
+        message_id = await self.mysql.execute(
+            """
+            INSERT INTO messages 
+            (conversation_id, chat_id, message_type, message_text, original_text, 
+             is_live_agent, agent_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                conversation_id,
+                message_data.get('chat_id'),
+                message_data['message_type'],
+                message_data['message_text'],
+                message_data.get('original_text'),
+                message_data.get('is_live_agent', False),
+                message_data.get('agent_name')
+            )
+        )
+        
+        # Store reference links
+        if links:
+            await self._store_reference_links(message_id, links)
+        
+        # Update conversation message count
+        await self.mysql.execute(
+            """
+            UPDATE conversations 
+            SET message_count = message_count + 1,
+                last_message_at = CURRENT_TIMESTAMP
+            WHERE conversation_id = %s
+            """,
+            (conversation_id,)
+        )
+        
+        # Update Redis cache
+        await self._add_message_to_redis(domain_id, conversation_id, message_id, message_data, links)
+        await self.refresh_user_activity(domain_id, conversation_id)
+        
+        return {
+            "message_id": message_id,
+            "conversation_id": conversation_id,
+            "created_at": datetime.utcnow()
+        }
+    
+    async def get_conversations(
+        self,
+        domain_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        include_archived: bool = False
+    ) -> Dict[str, Any]:
+        """Get conversation list for user"""
+        
+        # Try Redis cache first
+        cached = await self._get_conversations_from_redis(domain_id, limit, offset)
+        
+        if cached:
+            await self.refresh_user_activity(domain_id)
+            return {
+                "total_count": len(cached),
+                "conversations": cached,
+                "from_cache": True,
+                "page": offset // limit + 1,
+                "page_size": limit
+            }
+        
+        # Fetch from MySQL
+        where_clause = "WHERE domain_id = %s"
+        params = [domain_id]
+        
+        if not include_archived:
+            where_clause += " AND is_archived = FALSE"
+        
+        # Get total count
+        total_count = await self.mysql.fetch_value(
+            f"SELECT COUNT(*) FROM conversations {where_clause}",
+            tuple(params)
+        )
+        
+        # Get conversations
+        conversations = await self.mysql.fetch_all(
+            f"""
+            SELECT conversation_id, domain_id, title, created_at, 
+                   last_message_at, message_count, is_archived
+            FROM conversations
+            {where_clause}
+            ORDER BY last_message_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params + [limit, offset])
+        )
+        
+        # Cache to Redis
+        if conversations:
+            await self._cache_conversations_to_redis(domain_id, conversations)
+            await self.refresh_user_activity(domain_id)
+        
+        return {
+            "total_count": total_count,
+            "conversations": conversations,
+            "from_cache": False,
+            "page": offset // limit + 1,
+            "page_size": limit
+        }
+    
+    async def get_conversation_messages(
+        self,
+        domain_id: str,
+        conversation_id: str,
+        include_links: bool = True
+    ) -> Dict[str, Any]:
+        """Get all messages for a conversation"""
+        
+        # Try Redis cache
+        cached = await self._get_messages_from_redis(domain_id, conversation_id)
+        
+        if cached:
+            await self.refresh_user_activity(domain_id, conversation_id)
+            return {
+                "conversation_id": conversation_id,
+                "total_messages": len(cached),
+                "messages": cached,
+                "from_cache": True
+            }
+        
+        # Fetch from MySQL
+        messages = await self.mysql.fetch_all(
+            """
+            SELECT message_id, chat_id, message_type, message_text, original_text,
+                   created_at, is_live_agent, agent_name, liked, feedback_text, feedback_at
+            FROM messages
+            WHERE conversation_id = %s
+            ORDER BY created_at ASC
+            """,
+            (conversation_id,)
+        )
+        
+        # Fetch reference links if needed
+        if include_links and messages:
+            message_ids = [m['message_id'] for m in messages]
+            links = await self._get_reference_links(message_ids)
+            
+            # Group links by message_id
+            links_by_message = {}
+            for link in links:
+                msg_id = link['message_id']
+                if msg_id not in links_by_message:
+                    links_by_message[msg_id] = []
+                links_by_message[msg_id].append(link)
+            
+            # Attach links to messages
+            for message in messages:
+                message['reference_links'] = links_by_message.get(message['message_id'], [])
+        
+        # Cache to Redis
+        if messages:
+            await self._cache_messages_to_redis(domain_id, conversation_id, messages)
+            await self.refresh_user_activity(domain_id, conversation_id)
+        
+        return {
+            "conversation_id": conversation_id,
+            "total_messages": len(messages),
+            "messages": messages,
+            "from_cache": False
+        }
+    
+    async def update_message_feedback(
+        self,
+        domain_id: str,
+        message_id: int,
+        liked: int,
+        feedback_text: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Update message feedback (like/dislike)"""
+        
+        # Update in MySQL
+        await self.mysql.execute(
+            """
+            UPDATE messages 
+            SET liked = %s, feedback_text = %s, feedback_at = CURRENT_TIMESTAMP
+            WHERE message_id = %s
+            """,
+            (liked, feedback_text, message_id)
+        )
+        
+        # Get conversation_id for cache update
+        conversation_id = await self.mysql.fetch_value(
+            "SELECT conversation_id FROM messages WHERE message_id = %s",
+            (message_id,)
+        )
+        
+        # Update Redis cache
+        if conversation_id:
+            await self._update_message_feedback_in_redis(
+                domain_id, conversation_id, message_id, liked, feedback_text
+            )
+            await self.refresh_user_activity(domain_id, conversation_id)
+        
+        return {
+            "message_id": message_id,
+            "liked": liked,
+            "feedback_at": datetime.utcnow(),
+            "cache_updated": True
+        }
+    
+    async def search_conversations(
+        self,
+        domain_id: str,
+        query: str,
+        limit: int = 20
+    ) -> Dict[str, Any]:
+        """Search conversations by message content"""
+        
+        results = await self.mysql.fetch_all(
+            """
+            SELECT DISTINCT 
+                c.conversation_id, c.title, c.created_at,
+                m.message_id, m.message_text, m.created_at as message_created_at,
+                MATCH(m.message_text) AGAINST(%s) as relevance
+            FROM conversations c
+            INNER JOIN messages m ON c.conversation_id = m.conversation_id
+            WHERE c.domain_id = %s
+            AND MATCH(m.message_text) AGAINST(%s)
+            ORDER BY relevance DESC, m.created_at DESC
+            LIMIT %s
+            """,
+            (query, domain_id, query, limit)
+        )
+        
+        # Group by conversation
+        grouped = {}
+        for row in results:
+            conv_id = row['conversation_id']
+            if conv_id not in grouped:
+                grouped[conv_id] = {
+                    "conversation_id": conv_id,
+                    "title": row['title'],
+                    "created_at": row['created_at'],
+                    "matched_messages": [],
+                    "relevance_score": float(row['relevance'])
+                }
+            grouped[conv_id]['matched_messages'].append({
+                "message_id": row['message_id'],
+                "snippet": row['message_text'][:200] + "..." if len(row['message_text']) > 200 else row['message_text'],
+                "created_at": row['message_created_at']
+            })
+        
+        return {
+            "query": query,
+            "total_results": len(grouped),
+            "results": list(grouped.values())
+        }
+    
+    async def refresh_user_activity(
+        self,
+        domain_id: str,
+        conversation_id: Optional[str] = None
+    ):
+        """Refresh Redis TTL for all user keys"""
+        
+        # Refresh all user keys
+        pattern = f"user:{domain_id}:*"
+        await self.redis.refresh_ttl(pattern, self.TTL)
+        
+        # Update last activity timestamp
+        await self.redis.set(
+            f"user:{domain_id}:last_activity",
+            datetime.utcnow().isoformat(),
+            ttl=self.TTL
+        )
+    
+    # Private helper methods
+    
+    async def _store_reference_links(self, message_id: int, links: List[Dict]):
+        """Store reference links for a message"""
+        for idx, link in enumerate(links):
+            await self.mysql.execute(
+                """
+                INSERT INTO reference_links 
+                (message_id, url, title, source_type, display_order)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (message_id, link['url'], link.get('title'), link.get('source_type'), idx)
+            )
+    
+    async def _get_reference_links(self, message_ids: List[int]) -> List[Dict]:
+        """Get reference links for messages"""
+        if not message_ids:
+            return []
+        
+        placeholders = ','.join(['%s'] * len(message_ids))
+        return await self.mysql.fetch_all(
+            f"""
+            SELECT link_id, message_id, url, title, source_type, display_order
+            FROM reference_links
+            WHERE message_id IN ({placeholders})
+            ORDER BY message_id, display_order
+            """,
+            tuple(message_ids)
+        )
+    
+    async def _cache_conversation_to_redis(self, domain_id: str, conversation_id: str):
+        """Cache conversation to Redis"""
+        conv = await self.mysql.fetch_one(
+            """
+            SELECT conversation_id, title, created_at, last_message_at, message_count
+            FROM conversations
+            WHERE conversation_id = %s
+            """,
+            (conversation_id,)
+        )
+        
+        if not conv:
+            return
+        
+        # Add to sorted set (sorted by last_message_at timestamp)
+        await self.redis.zadd(
+            f"user:{domain_id}:conversations:list",
+            {conversation_id: conv['last_message_at'].timestamp()}
+        )
+        
+        # Store metadata in hash
+        await self.redis.hset(
+            f"user:{domain_id}:conversation:{conversation_id}",
+            {
+                "title": conv['title'],
+                "created_at": conv['created_at'].isoformat(),
+                "last_message_at": conv['last_message_at'].isoformat(),
+                "message_count": conv['message_count']
+            }
+        )
+        
+        # Set TTL
+        await self.redis.expire(f"user:{domain_id}:conversation:{conversation_id}", self.TTL)
+    
+    async def _cache_conversations_to_redis(self, domain_id: str, conversations: List[Dict]):
+        """Cache multiple conversations to Redis"""
+        for conv in conversations:
+            await self._cache_conversation_to_redis(domain_id, conv['conversation_id'])
+    
+    async def _get_conversations_from_redis(
+        self,
+        domain_id: str,
+        limit: int,
+        offset: int
+    ) -> Optional[List[Dict]]:
+        """Get conversations from Redis cache"""
+        
+        # Get conversation IDs from sorted set (reversed - newest first)
+        conv_ids = await self.redis.zrevrange(
+            f"user:{domain_id}:conversations:list",
+            offset,
+            offset + limit - 1
+        )
+        
+        if not conv_ids:
+            return None
+        
+        conversations = []
+        for conv_id in conv_ids:
+            conv_data = await self.redis.hgetall(f"user:{domain_id}:conversation:{conv_id}")
+            if conv_data:
+                conversations.append({
+                    "conversation_id": conv_id,
+                    "title": conv_data.get('title'),
+                    "created_at": conv_data.get('created_at'),
+                    "last_message_at": conv_data.get('last_message_at'),
+                    "message_count": int(conv_data.get('message_count', 0))
+                })
+        
+        return conversations if conversations else None
+    
+    async def _add_message_to_redis(
+        self,
+        domain_id: str,
+        conversation_id: str,
+        message_id: int,
+        message_data: Dict,
+        links: List[Dict]
+    ):
+        """Add message to Redis cache"""
+        
+        message_obj = {
+            "message_id": message_id,
+            "type": message_data['message_type'],
+            "text": message_data['message_text'],
+            "original_text": message_data.get('original_text'),
+            "chat_id": message_data.get('chat_id'),
+            "created_at": datetime.utcnow().isoformat(),
+            "liked": 0,
+            "links": links
+        }
+        
+        key = f"user:{domain_id}:messages:{conversation_id}"
+        await self.redis.lpush(key, json.dumps(message_obj))
+        await self.redis.expire(key, self.TTL)
+    
+    async def _cache_messages_to_redis(
+        self,
+        domain_id: str,
+        conversation_id: str,
+        messages: List[Dict]
+    ):
+        """Cache messages to Redis"""
+        
+        key = f"user:{domain_id}:messages:{conversation_id}"
+        
+        # Clear existing cache
+        await self.redis.delete(key)
+        
+        # Add all messages
+        for msg in reversed(messages):  # Reverse to maintain order when using LPUSH
+            message_obj = {
+                "message_id": msg['message_id'],
+                "type": msg['message_type'],
+                "text": msg['message_text'],
+                "original_text": msg.get('original_text'),
+                "chat_id": msg.get('chat_id'),
+                "created_at": msg['created_at'].isoformat(),
+                "liked": msg.get('liked', 0),
+                "feedback_text": msg.get('feedback_text'),
+                "links": msg.get('reference_links', [])
+            }
+            await self.redis.lpush(key, json.dumps(message_obj))
+        
+        await self.redis.expire(key, self.TTL)
+    
+    async def _get_messages_from_redis(
+        self,
+        domain_id: str,
+        conversation_id: str
+    ) -> Optional[List[Dict]]:
+        """Get messages from Redis cache"""
+        
+        key = f"user:{domain_id}:messages:{conversation_id}"
+        messages_json = await self.redis.lrange(key, 0, -1)
+        
+        if not messages_json:
+            return None
+        
+        # Parse and reverse (to get chronological order)
+        messages = [json.loads(msg) for msg in messages_json]
+        messages.reverse()
+        
+        return messages
+    
+    async def _update_message_feedback_in_redis(
+        self,
+        domain_id: str,
+        conversation_id: str,
+        message_id: int,
+        liked: int,
+        feedback_text: Optional[str]
+    ):
+        """Update message feedback in Redis cache"""
+        
+        # For simplicity, just invalidate the cache
+        # It will be reloaded from MySQL on next request
+        key = f"user:{domain_id}:messages:{conversation_id}"
+        await self.redis.delete(key)

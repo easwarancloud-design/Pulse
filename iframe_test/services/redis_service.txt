@@ -1,0 +1,80 @@
+from typing import List, Optional, Dict, Any
+import json
+from config.database import db_manager
+from config.settings import settings
+
+class RedisService:
+    """Service for Redis cache operations"""
+    
+    @property
+    def redis(self):
+        """Get Redis connection from pool"""
+        return db_manager.redis_pool
+    
+    async def set(self, key: str, value: str, ttl: int = None):
+        """Set key-value with optional TTL"""
+        if ttl:
+            await self.redis.setex(key, ttl, value)
+        else:
+            await self.redis.set(key, value)
+    
+    async def get(self, key: str) -> Optional[str]:
+        """Get value by key"""
+        return await self.redis.get(key)
+    
+    async def delete(self, *keys: str) -> int:
+        """Delete one or more keys"""
+        if keys:
+            return await self.redis.delete(*keys)
+        return 0
+    
+    async def exists(self, key: str) -> bool:
+        """Check if key exists"""
+        return await self.redis.exists(key) > 0
+    
+    async def expire(self, key: str, ttl: int) -> bool:
+        """Set expiration time on key"""
+        return await self.redis.expire(key, ttl)
+    
+    async def keys(self, pattern: str) -> List[str]:
+        """Get all keys matching pattern"""
+        return await self.redis.keys(pattern)
+    
+    async def hset(self, key: str, mapping: Dict[str, Any]):
+        """Set hash field values"""
+        # Convert all values to strings
+        str_mapping = {k: str(v) for k, v in mapping.items()}
+        await self.redis.hset(key, mapping=str_mapping)
+    
+    async def hgetall(self, key: str) -> Dict[str, str]:
+        """Get all hash fields and values"""
+        return await self.redis.hgetall(key)
+    
+    async def lpush(self, key: str, *values: str) -> int:
+        """Push values to left of list"""
+        return await self.redis.lpush(key, *values)
+    
+    async def lrange(self, key: str, start: int, end: int) -> List[str]:
+        """Get range of list elements"""
+        return await self.redis.lrange(key, start, end)
+    
+    async def zadd(self, key: str, mapping: Dict[str, float]):
+        """Add members to sorted set"""
+        await self.redis.zadd(key, mapping)
+    
+    async def zrevrange(self, key: str, start: int, end: int) -> List[str]:
+        """Get range from sorted set (high to low)"""
+        return await self.redis.zrevrange(key, start, end)
+    
+    async def refresh_ttl(self, pattern: str, ttl: int = None) -> int:
+        """Refresh TTL on all keys matching pattern"""
+        ttl = ttl or settings.REDIS_TTL_SECONDS
+        keys = await self.keys(pattern)
+        
+        if keys:
+            pipeline = self.redis.pipeline()
+            for key in keys:
+                pipeline.expire(key, ttl)
+            await pipeline.execute()
+        
+        return len(keys)

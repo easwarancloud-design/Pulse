@@ -1,0 +1,116 @@
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional
+from models.conversation import (
+    ConversationCreate,
+    ConversationResponse,
+    ConversationListResponse,
+    ConversationSearchResponse
+)
+from services.conversation_service import ConversationService
+
+router = APIRouter(prefix="/conversations", tags=["Conversations"])
+service = ConversationService()
+
+@router.post("/", response_model=dict)
+async def create_conversation(data: ConversationCreate):
+    """
+    Create a new conversation
+    
+    - **domain_id**: User domain ID (required)
+    - **title**: Conversation title (required)
+    - **initial_message**: Optional first message
+    """
+    try:
+        result = await service.create_conversation(
+            domain_id=data.domain_id,
+            title=data.title,
+            session_id=data.session_id,
+            first_name=data.first_name,
+            last_name=data.last_name,
+            email=data.email,
+            initial_message=data.initial_message
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{domain_id}/history", response_model=ConversationListResponse)
+async def get_conversation_history(
+    domain_id: str,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    include_archived: bool = Query(False)
+):
+    """
+    Get conversation history for a user
+    
+    - **domain_id**: User domain ID
+    - **limit**: Number of conversations to return (1-100)
+    - **offset**: Pagination offset
+    - **include_archived**: Include archived conversations
+    """
+    try:
+        result = await service.get_conversations(
+            domain_id=domain_id,
+            limit=limit,
+            offset=offset,
+            include_archived=include_archived
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{conversation_id}/details", response_model=dict)
+async def get_conversation_details(conversation_id: str, domain_id: str = Query(...)):
+    """
+    Get conversation details
+    
+    - **conversation_id**: Conversation UUID
+    - **domain_id**: User domain ID (for cache refresh)
+    """
+    try:
+        # Just refresh activity for now
+        await service.refresh_user_activity(domain_id, conversation_id)
+        
+        # Could fetch and return conversation metadata here
+        return {"conversation_id": conversation_id, "status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{domain_id}/search", response_model=ConversationSearchResponse)
+async def search_conversations(
+    domain_id: str,
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(20, ge=1, le=50)
+):
+    """
+    Search conversations by message content
+    
+    - **domain_id**: User domain ID
+    - **q**: Search query (full-text search)
+    - **limit**: Max results to return (1-50)
+    """
+    try:
+        result = await service.search_conversations(
+            domain_id=domain_id,
+            query=q,
+            limit=limit
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{conversation_id}/archive")
+async def archive_conversation(conversation_id: str, domain_id: str = Query(...)):
+    """
+    Archive a conversation
+    
+    - **conversation_id**: Conversation UUID
+    - **domain_id**: User domain ID
+    """
+    try:
+        # Implement archiving logic here
+        # For now, just a placeholder
+        return {"conversation_id": conversation_id, "archived": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

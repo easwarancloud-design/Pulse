@@ -1,0 +1,63 @@
+import aiomysql
+import redis.asyncio as aioredis
+from typing import Optional
+from .settings import settings
+
+class DatabaseManager:
+    """Manages database connections"""
+    
+    def __init__(self):
+        self.mysql_pool: Optional[aiomysql.Pool] = None
+        self.redis_pool: Optional[aioredis.Redis] = None
+    
+    async def connect_mysql(self):
+        """Create MySQL connection pool"""
+        self.mysql_pool = await aiomysql.create_pool(
+            host=settings.MYSQL_HOST,
+            port=settings.MYSQL_PORT,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            db=settings.MYSQL_DATABASE,
+            minsize=5,
+            maxsize=settings.MYSQL_POOL_SIZE,
+            autocommit=True,
+            charset='utf8mb4'
+        )
+        print(f"✅ MySQL pool created: {settings.MYSQL_HOST}:{settings.MYSQL_PORT}/{settings.MYSQL_DATABASE}")
+    
+    async def connect_redis(self):
+        """Create Redis connection pool"""
+        self.redis_pool = await aioredis.from_url(
+            f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}",
+            password=settings.REDIS_PASSWORD,
+            encoding="utf-8",
+            decode_responses=True,
+            max_connections=settings.REDIS_POOL_SIZE
+        )
+        print(f"✅ Redis pool created: {settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}")
+    
+    async def close_mysql(self):
+        """Close MySQL connection pool"""
+        if self.mysql_pool:
+            self.mysql_pool.close()
+            await self.mysql_pool.wait_closed()
+            print("❌ MySQL pool closed")
+    
+    async def close_redis(self):
+        """Close Redis connection"""
+        if self.redis_pool:
+            await self.redis_pool.close()
+            print("❌ Redis pool closed")
+    
+    async def startup(self):
+        """Startup: Connect to all databases"""
+        await self.connect_mysql()
+        await self.connect_redis()
+    
+    async def shutdown(self):
+        """Shutdown: Close all database connections"""
+        await self.close_mysql()
+        await self.close_redis()
+
+# Global database manager instance
+db_manager = DatabaseManager()

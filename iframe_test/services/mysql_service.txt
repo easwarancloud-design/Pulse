@@ -1,0 +1,35 @@
+from typing import List, Optional, Dict, Any
+from config.database import db_manager
+
+class MySQLService:
+    """Service for MySQL database operations"""
+    
+    async def execute(self, query: str, params: tuple = None) -> int:
+        """Execute INSERT/UPDATE/DELETE and return last insert ID or affected rows"""
+        async with db_manager.mysql_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(query, params or ())
+                await conn.commit()
+                return cursor.lastrowid or cursor.rowcount
+    
+    async def fetch_one(self, query: str, params: tuple = None) -> Optional[Dict[str, Any]]:
+        """Fetch single row as dictionary"""
+        async with db_manager.mysql_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(query, params or ())
+                return await cursor.fetchone()
+    
+    async def fetch_all(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
+        """Fetch all rows as list of dictionaries"""
+        async with db_manager.mysql_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(query, params or ())
+                return await cursor.fetchall()
+    
+    async def fetch_value(self, query: str, params: tuple = None) -> Any:
+        """Fetch single value from query"""
+        async with db_manager.mysql_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(query, params or ())
+                result = await cursor.fetchone()
+                return result[0] if result else None

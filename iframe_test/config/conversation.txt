@@ -1,0 +1,41 @@
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from datetime import datetime
+
+class ConversationCreate(BaseModel):
+    """Request model for creating a new conversation"""
+    domain_id: str = Field(..., min_length=1, max_length=50)
+    title: str = Field(..., min_length=1, max_length=255)
+    session_id: Optional[str] = Field(None, max_length=100)
+    first_name: Optional[str] = Field(None, max_length=100)
+    last_name: Optional[str] = Field(None, max_length=100)
+    email: Optional[str] = Field(None, max_length=255)
+    initial_message: Optional[dict] = None
+
+class ConversationResponse(BaseModel):
+    """Response model for conversation"""
+    conversation_id: str
+    domain_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    last_message_at: datetime
+    message_count: int
+    is_archived: bool
+    first_message_preview: Optional[str] = None
+    last_message_preview: Optional[str] = None
+    total_reference_links: Optional[int] = 0
+
+class ConversationListResponse(BaseModel):
+    """Response model for conversation list"""
+    total_count: int
+    conversations: List[ConversationResponse]
+    from_cache: bool
+    page: int
+    page_size: int
+
+class ConversationSearchResponse(BaseModel):
+    """Response model for search results"""
+    query: str
+    total_results: int
+    results: List[dict]
