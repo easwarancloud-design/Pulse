@@ -144,94 +144,24 @@ function AppContent() {
 
   const loadExistingConversation = (conversationId) => {
     try {
-      // First check MenuSidebarDark for static data
-      const staticThreads = getStaticThreadsData();
-      let foundThread = staticThreads.find(thread => thread.id === conversationId);
-
-      if (!foundThread) {
-        // Check localStorage for saved threads
-        const stored = localStorage.getItem('chatThreads');
-        if (stored) {
-          const threadsData = JSON.parse(stored);
-          const allStoredThreads = [
-            ...(threadsData.today || []),
-            ...(threadsData.yesterday || []),
-            ...(threadsData.lastWeek || []),
-            ...(threadsData.last30Days || [])
-          ];
-          foundThread = allStoredThreads.find(thread => thread.id === conversationId);
-        }
-      }
-
-      if (foundThread) {
-        setCurrentThread(foundThread);
-        setUserQuestion('');
-        setIsNewChat(false);
-        setIsNewChatActive(false);
-      } else {
-        console.error('Conversation not found:', conversationId);
-        // Fallback to new chat
-        handleNewChat();
-      }
+      // API-only mode - no static data or localStorage
+      console.warn('🔍 Conversation loading from API only. ConversationId:', conversationId);
+      
+      // Create empty thread and let ChatPage handle API loading
+      const emptyThread = {
+        id: conversationId,
+        title: 'Loading...',
+        conversation: []
+      };
+      
+      setCurrentThread(emptyThread);
+      setUserQuestion('');
+      setIsNewChat(false);
+      setIsNewChatActive(false);
     } catch (error) {
       console.error('Error loading conversation:', error);
       handleNewChat();
     }
-  };
-
-  // Helper function to get static threads from MenuSidebarDark
-  const getStaticThreadsData = () => {
-    // This should match the data structure in MenuSidebarDark.jsx
-    return [
-      {
-        id: 'lw1',
-        title: 'Can you create a service IT ticket for me ...',
-        conversation: [
-          { type: 'user', text: 'Can you create a service IT ticket for me to reset my password?' },
-          { type: 'assistant', text: 'I\'d be happy to help you create a service IT ticket for password reset. Let me guide you through the process.' }
-        ]
-      },
-      {
-        id: 'lw2',
-        title: 'Can you find confluence pages related ...',
-        conversation: [
-          { type: 'user', text: 'Can you find confluence pages related to our project documentation?' },
-          { type: 'assistant', text: 'I\'ll search for confluence pages related to your project. Here are the relevant documents I found...' }
-        ]
-      },
-      {
-        id: 'lw3',
-        title: 'What are the latest project updates for ...',
-        conversation: [
-          { type: 'user', text: 'What are the latest project updates for the Q4 initiatives?' },
-          { type: 'assistant', text: 'Here are the latest updates for your Q4 initiatives based on the most recent data...' }
-        ]
-      },
-      {
-        id: 'lw4',
-        title: 'What are the key metrics we should ...',
-        conversation: [
-          { type: 'user', text: 'What are the key metrics we should track for our team performance?' },
-          { type: 'assistant', text: 'Based on your team\'s objectives, here are the key performance metrics you should track...' }
-        ]
-      },
-      {
-        id: 'l30d1',
-        title: 'How do I access the company VPN ...',
-        conversation: [
-          { type: 'user', text: 'How do I access the company VPN from my home office?' },
-          { type: 'assistant', text: 'Here\'s a step-by-step guide to access the company VPN from your home office...' }
-        ]
-      },
-      {
-        id: 'l30d2',
-        title: 'What are the holiday schedules for ...',
-        conversation: [
-          { type: 'user', text: 'What are the holiday schedules for this year?' },
-          { type: 'assistant', text: 'Here are the company holiday schedules for this year...' }
-        ]
-      }
-    ];
   };
 
   const navigateToMain = () => {
@@ -305,35 +235,7 @@ function AppContent() {
     // Navigate to result page for new chat
     navigate('/resultpage');
 
-    // Save the new thread to localStorage in the grouped format
-    try {
-      const stored = localStorage.getItem('chatThreads');
-      let threadsData;
-
-      if (stored) {
-        threadsData = JSON.parse(stored);
-        // Ensure the structure exists
-        if (!threadsData.today) threadsData.today = [];
-        if (!threadsData.yesterday) threadsData.yesterday = [];
-        if (!threadsData.lastWeek) threadsData.lastWeek = [];
-        if (!threadsData.last30Days) threadsData.last30Days = [];
-      } else {
-        // Create the initial structure if none exists
-        threadsData = {
-          today: [],
-          yesterday: [],
-          lastWeek: [],
-          last30Days: []
-        };
-      }
-
-      // Add the new thread to today's category
-      threadsData.today.unshift(newThread);
-
-      localStorage.setItem('chatThreads', JSON.stringify(threadsData));
-    } catch (error) {
-      console.error('Error saving new thread to localStorage:', error);
-    }
+    // Note: Thread saving now handled via API in ChatPage component
   };
 
   const handleThreadSelect = (thread) => {

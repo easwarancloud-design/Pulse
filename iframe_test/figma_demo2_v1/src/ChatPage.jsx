@@ -4,8 +4,8 @@ import MenuSidebar from './MenuSidebar';
 import { useAccessToken } from './components/UseToken';
 import ButtonRow from './components/ButtonRow';
 import { uuidv4, cleanStreamText } from './utils/workforceAgentUtils';
-import { localChatHistory } from './utils/localChatHistory';
 import { API_ENDPOINTS } from './config/api';
+import { hybridChatService } from './services/hybridChatService';
 
 // Text formatting utilities
 const formatTextWithLinks = (text) => {
@@ -127,11 +127,29 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     setLoading(true);
     setApiTriggered(true);
     
+    // 🔄 Create conversation if this is a new chat
+    try {
+      if (isNewChat || !hybridChatService.getCurrentConversationId()) {
+        const conversationTitle = inputText.length > 50 ? 
+          inputText.substring(0, 50) + '...' : inputText;
+        console.log('🔄 Creating new conversation:', conversationTitle);
+        const conversationId = await hybridChatService.startNewConversation(conversationTitle);
+        console.log('✅ Conversation created:', conversationId);
+      }
+    } catch (error) {
+      console.error('❌ Failed to create conversation:', error);
+      // Continue with chat even if conversation creation fails
+    }
+    
     let partialMessage = '';
     let liveAgentTriggered = false; 
     const botChatId = `msg_${Date.now()}`;
     
     const domainid = DEFAULT_DOMAIN_ID; // Use AG04333 as default
+    
+    // 🆔 Set the domain ID for conversation storage
+    hybridChatService.setUserId(domainid);
+    
     const apiStartTime = performance.now(); // Move outside try block
 
     // Quick connectivity check
@@ -168,6 +186,30 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         chat_id: botChatId 
       };
       setMessages(prev => [...prev, userMessage, botMessage]);
+    }
+
+    // 🔄 Save user question to conversation immediately
+    try {
+      console.log('🔄 Starting user question save process...');
+      console.log('🔍 hybridChatService available:', !!hybridChatService);
+      console.log('🔍 saveUserQuestion method available:', typeof hybridChatService.saveUserQuestion);
+      
+      await hybridChatService.saveUserQuestion(
+        inputText, 
+        { 
+          source: 'chat_page', 
+          timestamp: Date.now(),
+          domain_id: domainid
+        }
+      );
+      console.log('✅ User question saved to conversation');
+    } catch (storageError) {
+      console.error('❌ Failed to save user question:', storageError);
+      console.error('❌ Error details:', {
+        name: storageError.name,
+        message: storageError.message,
+        stack: storageError.stack
+      });
     }
 
     try {
@@ -407,17 +449,38 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             : msg
         ));
 
-        // Save to local chat history
-        localChatHistory.saveChatEntry({
-          chat_id: botChatId,
-          session_id: Date.now().toString(),
-          domain_id: domainid,
-          question_text: inputText,
-          response_text: partialMessage,
-          chat_type: 'bot',
-          feedback_score: 0,
-          title: inputText.length > 50 ? inputText.substring(0, 50) + '...' : inputText
-        });
+        // 🔄 Save to hybrid chat service (replaces localStorage save)
+        try {
+          await hybridChatService.saveUserQuestion(
+            inputText, 
+            { 
+              source: 'chat_page', 
+              timestamp: Date.now(),
+              chat_id: botChatId,
+              session_id: Date.now().toString(),
+              domain_id: domainid
+            }
+          );
+          
+          await hybridChatService.saveAssistantResponse(
+            partialMessage,
+            inputText,
+            { 
+              source: 'workforce_agent',
+              chat_type: 'bot',
+              streaming_response: true,
+              timestamp: Date.now(),
+              chat_id: botChatId,
+              session_id: Date.now().toString(),
+              domain_id: domainid
+            }
+          );
+          
+          console.log('✅ Chat interaction saved to hybrid service');
+        } catch (storageError) {
+          console.error('⚠️ Hybrid service failed:', storageError);
+          // API-only mode - no localStorage fallback
+        }
       }
 
     } catch (error) {
@@ -461,6 +524,35 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     } finally {
       setLoading(false);
       setStreamingMessageId(null);
+      
+      // 🔄 Save conversation to hybrid chat service after completion
+      try {
+        const finalMessages = [...messages];
+        const userMsg = finalMessages.find(msg => msg.type === 'user');
+        const assistantMsg = finalMessages.find(msg => msg.type === 'assistant' && msg.completed);
+        
+        if (userMsg && assistantMsg && assistantMsg.text) {
+          await hybridChatService.saveUserQuestion(
+            userMsg.text, 
+            { source: 'chat_page', timestamp: Date.now() }
+          );
+          
+          await hybridChatService.saveAssistantResponse(
+            assistantMsg.text,
+            userMsg.text,
+            { 
+              source: 'workforce_agent',
+              original_text: assistantMsg.originalText,
+              streaming_response: true,
+              timestamp: Date.now()
+            }
+          );
+          
+          console.log('✅ Conversation saved to hybrid chat service');
+        }
+      } catch (storageError) {
+        console.warn('⚠️ Failed to save to hybrid chat service, fallback handled:', storageError);
+      }
     }
   };
 
@@ -867,36 +959,44 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
   // Save thread when coming from main page or when messages are updated
   useEffect(() => {
-    if (currentThread && messages.length >= 2) {
-      // Check if this is a manual input with response (coming from main page or URL)
-      const isManualInput = (currentThread.conversation?.length === 1 && 
-                           currentThread.conversation[0].type === 'user' &&
-                           messages.length === 2 &&
-                           messages[0].type === 'user' &&
-                           messages[1].type === 'assistant') ||
-                           (urlQuery && urlType === 'manual');
-      
-      if (isManualInput || (effectiveQuestion && !isNewChat)) {
-        const threadToSave = {
-          ...currentThread,
-          conversation: messages
-        };
-        saveThreadToStorage(threadToSave);
+    const saveThreadIfNeeded = async () => {
+      if (currentThread && messages.length >= 2) {
+        // Check if this is a manual input with response (coming from main page or URL)
+        const isManualInput = (currentThread.conversation?.length === 1 && 
+                             currentThread.conversation[0].type === 'user' &&
+                             messages.length === 2 &&
+                             messages[0].type === 'user' &&
+                             messages[1].type === 'assistant') ||
+                             (urlQuery && urlType === 'manual');
+        
+        if (isManualInput || (effectiveQuestion && !isNewChat)) {
+          const threadToSave = {
+            ...currentThread,
+            conversation: messages
+          };
+          await saveThreadToStorage(threadToSave);
+        }
       }
-    }
+    };
+    
+    saveThreadIfNeeded();
   }, [effectiveQuestion, isNewChat, currentThread, messages, urlQuery, urlType]);
 
   // Handle manual input case - save the conversation with response
   useEffect(() => {
-    if (currentThread?.conversation?.length === 1 && 
-        currentThread.conversation[0].type === 'user' && 
-        messages.length === 2) {
-      const threadToSave = {
-        ...currentThread,
-        conversation: messages
-      };
-      saveThreadToStorage(threadToSave);
-    }
+    const saveManualThread = async () => {
+      if (currentThread?.conversation?.length === 1 && 
+          currentThread.conversation[0].type === 'user' && 
+          messages.length === 2) {
+        const threadToSave = {
+          ...currentThread,
+          conversation: messages
+        };
+        await saveThreadToStorage(threadToSave);
+      }
+    };
+    
+    saveManualThread();
   }, [currentThread, messages]);
 
   // Update messages when thread changes
@@ -961,202 +1061,34 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
   }, [effectiveQuestion, urlQuery, urlType, isNewChat, currentThread?.id, apiTriggered]);
 
-  const saveThreadToStorage = (thread) => {
+  const saveThreadToStorage = async (thread) => {
     try {
-      const stored = localStorage.getItem('chatThreads');
-      let threads;
-      
-      if (stored) {
-        threads = JSON.parse(stored);
+      // 🔄 Use conversation API only (no localStorage)
+      if (hybridChatService.getCurrentConversationId()) {
+        // Update existing conversation title
+        await hybridChatService.updateConversation(
+          hybridChatService.getCurrentConversationId(),
+          { 
+            title: thread.title,
+            summary: thread.conversation?.length > 0 ? 
+              `${thread.conversation.length} messages` : 'New conversation',
+            metadata: { 
+              updated_from: 'thread_save',
+              thread_data: thread,
+              last_updated: new Date().toISOString()
+            }
+          }
+        );
+        console.log('✅ Thread updated via conversation API');
       } else {
-        // If no stored data exists, get the default threads from MenuSidebar's loadThreadsFromStorage
-        threads = getDefaultThreadsData();
+        // Create new conversation if none exists
+        const newConversation = await hybridChatService.startNewConversation(thread.title);
+        console.log('✅ New thread created via conversation API:', newConversation);
       }
-      
-      // Ensure all categories exist
-      if (!threads.today) threads.today = [];
-      if (!threads.yesterday) threads.yesterday = [];
-      if (!threads.lastWeek) threads.lastWeek = [];
-      if (!threads.last30Days) threads.last30Days = [];
-      
-      // Add to today's threads
-      const existingIndex = threads.today.findIndex(t => t.id === thread.id);
-      if (existingIndex >= 0) {
-        threads.today[existingIndex] = thread;
-      } else {
-        threads.today.unshift(thread);
-      }
-      
-      localStorage.setItem('chatThreads', JSON.stringify(threads));
     } catch (error) {
-      console.error('Error saving thread to localStorage:', error);
+      console.error('❌ Failed to save thread via API:', error);
+      // Note: No localStorage fallback - API-only mode
     }
-  };
-
-  // Function to get default threads data (same as in MenuSidebar)
-  const getDefaultThreadsData = () => {
-    return {
-      today: [
-        {
-          id: 't1',
-          title: 'How to submit sick leave in Workday?',
-          conversation: [
-            { type: 'user', text: 'How do I submit sick leave requests in Workday?' },
-            { type: 'assistant', text: 'To submit sick leave in Workday: 1) Go to Workday homepage > "Time" tile, 2) Click "Request Time Off", 3) Select "Sick Leave" from the dropdown, 4) Choose your dates and duration (full day or partial), 5) Add notes if needed, 6) Submit for approval. For same-day sick leave, you can also call your manager and submit the request when you return. No doctor\'s note required for absences under 3 consecutive days.' }
-          ]
-        },
-        {
-          id: 't2',
-          title: 'Understanding our compensation review cycle',
-          conversation: [
-            { type: 'user', text: 'When does our compensation review happen and how does it work?' },
-            { type: 'assistant', text: 'Our compensation review occurs annually in March. The process includes: salary benchmarking against market data, performance rating consideration, budget allocation per department, and manager recommendations. Merit increases range from 2-8% based on performance and market position. Promotions are evaluated separately in Q4. You\'ll receive notification of any changes by April 1st, effective with the April payroll.' }
-          ]
-        },
-        {
-          id: 't3',
-          title: 'How to access employee handbook in Workday?',
-          conversation: [
-            { type: 'user', text: 'Where can I find the employee handbook and company policies in Workday?' },
-            { type: 'assistant', text: 'Access the employee handbook in Workday by: 1) Logging into Workday, 2) Click on the "Benefits" worklet, 3) Select "View All Benefits", 4) Look for "Resources and Documents" section, 5) Click "Employee Handbook". You can also find specific policies under "Company" > "Company Documents" > "HR Policies". The handbook is updated quarterly, and you\'ll be notified of major policy changes via email.' }
-          ]
-        },
-        {
-          id: 't4',
-          title: 'Requesting flexible work arrangements',
-          conversation: [
-            { type: 'user', text: 'How do I request flexible work arrangements or schedule changes?' },
-            { type: 'assistant', text: 'To request flexible work arrangements: 1) Discuss with your manager first to ensure business needs are met, 2) Complete the "Flexible Work Request" form in Workday under "Actions" > "Job Change" > "Request Flexible Work", 3) Specify your requested schedule, work location, and business justification, 4) Submit for manager and HR approval. Requests are typically processed within 5-7 business days. Arrangements are reviewed every 6 months.' }
-          ]
-        },
-        {
-          id: 't5',
-          title: 'How to view pay statements in Workday?',
-          conversation: [
-            { type: 'user', text: 'Where do I find my pay statements and tax documents in Workday?' },
-            { type: 'assistant', text: 'View your pay information in Workday by: 1) Go to "Pay" worklet on homepage, 2) Click "View Pay" to see current and past pay statements, 3) For tax documents, go to "Pay" > "Tax Documents" to access W-2s and other forms, 4) You can download PDFs or view online. Pay statements are available immediately after each payroll run (bi-weekly on Fridays). Set up email notifications under "Pay" > "Pay Preferences" to get alerts when new statements are available.' }
-          ]
-        }
-      ],
-      yesterday: [
-        {
-          id: 'y1',
-          title: 'FMLA leave application process',
-          conversation: [
-            { type: 'user', text: 'How do I apply for FMLA leave and what documentation is required?' },
-            { type: 'assistant', text: 'To apply for FMLA leave: 1) Contact HR at least 30 days in advance (or ASAP for emergencies), 2) Complete the FMLA request form in Workday under "Benefits" > "Leave of Absence", 3) Obtain medical certification from your healthcare provider using Form DOL-WH-380-E, 4) Submit all documentation to leave@company.com. You\'re eligible if you\'ve worked 1,250+ hours in the past 12 months. FMLA provides up to 12 weeks unpaid leave with job protection and continued health benefits.' }
-          ]
-        },
-        {
-          id: 'y2',
-          title: 'Emergency contact updates in Workday',
-          conversation: [
-            { type: 'user', text: 'How do I update my emergency contacts and personal information in Workday?' },
-            { type: 'assistant', text: 'Update your emergency contacts in Workday: 1) Go to "Personal Information" worklet, 2) Click "Emergency Contacts", 3) Add, edit, or remove contacts as needed, 4) Include full name, relationship, phone numbers, and address, 5) Save changes. Also update your personal address, phone number, and email under "Personal Information" > "Contact Information". Keep this information current as it\'s used for emergency notifications and important company communications.' }
-          ]
-        },
-        {
-          id: 'y3',
-          title: 'Dependent coverage and life events',
-          conversation: [
-            { type: 'user', text: 'How do I add dependents to my benefits after a qualifying life event?' },
-            { type: 'assistant', text: 'After a qualifying life event (marriage, birth, adoption, etc.): 1) You have 30 days to make changes, 2) Go to Workday "Benefits" > "Change Benefits", 3) Select your qualifying event type, 4) Add dependents with their information and required documents, 5) Adjust your benefit selections, 6) Submit by the 30-day deadline. Required documents include marriage certificates, birth certificates, or adoption papers. Changes are effective the first of the month following your event date.' }
-          ]
-        },
-        {
-          id: 'y4',
-          title: 'Workday mobile app setup and features',
-          conversation: [
-            { type: 'user', text: 'How do I set up the Workday mobile app and what can I do with it?' },
-            { type: 'assistant', text: 'Download the Workday app from your app store and sign in with your company credentials. Key features include: time tracking and time-off requests, pay statement viewing, benefits information access, emergency contact updates, and company directory search. Enable push notifications to get alerts for important deadlines. You can also approve team member requests if you\'re a manager. The app syncs with the desktop version in real-time.' }
-          ]
-        }
-      ],
-      lastWeek: [
-        {
-          id: 'lw1',
-          title: 'Annual enrollment period and deadlines',
-          conversation: [
-            { type: 'user', text: 'When is annual enrollment and what changes can I make to my benefits?' },
-            { type: 'assistant', text: 'Annual enrollment runs November 1-15 each year. During this period, you can: change health insurance plans, adjust FSA/HSA contributions, modify life insurance coverage, update dependent coverage, and select voluntary benefits like legal services or pet insurance. If you don\'t make changes, your current elections continue (except FSA, which resets to $0). Review the benefits fair materials and attend information sessions. Changes are effective January 1st.' }
-          ]
-        },
-        {
-          id: 'lw2',
-          title: 'Tuition reimbursement program requirements',
-          conversation: [
-            { type: 'user', text: 'What are the requirements for tuition reimbursement and how do I apply?' },
-            { type: 'assistant', text: 'Tuition reimbursement eligibility: 1) Employed for 12+ months, 2) Course must be job-related or lead to degree in your field, 3) Maintain "C" grade or better, 4) Pre-approval required. Apply through Workday "Learning" > "Tuition Assistance" before enrollment. Reimbursement is up to $5,000/year for undergraduate and $7,500/year for graduate courses. Submit receipts and transcripts within 60 days of course completion. Two-year commitment required post-graduation.' }
-          ]
-        },
-        {
-          id: 'lw3',
-          title: 'Workers compensation claim process',
-          conversation: [
-            { type: 'user', text: 'What should I do if I get injured at work? How do I file a workers comp claim?' },
-            { type: 'assistant', text: 'For workplace injuries: 1) Seek immediate medical attention if needed, 2) Report to your supervisor immediately, 3) Call our 24/7 injury hotline: 1-800-INJURY-1, 4) Complete incident report in Workday within 24 hours, 5) Follow up with designated medical provider. Keep all medical documentation and receipts. You may be eligible for medical coverage and wage replacement. Return-to-work accommodations are available. Contact HR for guidance throughout the process.' }
-          ]
-        },
-        {
-          id: 'lw4',
-          title: 'Sabbatical leave policy and eligibility',
-          conversation: [
-            { type: 'user', text: 'Does our company offer sabbatical leave? What are the requirements?' },
-            { type: 'assistant', text: 'Sabbatical leave is available after 7 years of continuous employment. You can take 3-6 months unpaid leave for professional development, research, travel, or personal enrichment. Requirements: submit proposal 6 months in advance, demonstrate how it benefits your role/company, arrange coverage for your responsibilities, commit to returning for minimum 2 years. During sabbatical, benefits continue with employee contribution. Apply through Workday "Actions" > "Request Leave of Absence" > "Sabbatical".' }
-          ]
-        },
-        {
-          id: 'lw5',
-          title: 'Internal job posting and transfer process',
-          conversation: [
-            { type: 'user', text: 'How do I apply for internal job postings and what\'s the transfer process?' },
-            { type: 'assistant', text: 'Internal job applications: 1) Browse open positions in Workday "Career" worklet, 2) Click "Find Jobs" to search by location, department, or keywords, 3) Apply directly through Workday with updated profile, 4) Notify your current manager after applying, 5) Complete any required assessments. Interview process is similar to external hires. If selected, typical notice period is 2-4 weeks. You must be in current role for 12+ months and have satisfactory performance to be eligible for transfer.' }
-          ]
-        }
-      ],
-      last30Days: [
-        {
-          id: 'l30d1',
-          title: 'Stock purchase plan enrollment',
-          conversation: [
-            { type: 'user', text: 'How does the employee stock purchase plan work and how do I enroll?' },
-            { type: 'assistant', text: 'Our Employee Stock Purchase Plan (ESPP) allows you to buy company stock at a 15% discount. Enrollment periods are twice yearly (May and November). You can contribute 1-15% of your base salary through payroll deduction. Stock purchases occur at the end of each 6-month period at the lower of the beginning or ending price, minus 15% discount. Enroll in Workday "Benefits" > "Stock Purchase Plan". Minimum tenure of 6 months required. You can sell immediately or hold for long-term investment.' }
-          ]
-        },
-        {
-          id: 'l30d2',
-          title: 'Exit interview process and final pay',
-          conversation: [
-            { type: 'user', text: 'What happens during the exit process when leaving the company?' },
-            { type: 'assistant', text: 'Exit process includes: 1) Two weeks notice (or per your contract), 2) Exit interview with HR (scheduled automatically), 3) Return company property (laptop, badge, phone), 4) Knowledge transfer documentation, 5) Final paycheck includes unused vacation (per state law), 6) COBRA benefits information, 7) 401k rollover options, 8) Reference policy acknowledgment. Your final pay will be processed on your last day or next regular payroll, depending on state requirements. Access to systems is removed on your last day.' }
-          ]
-        },
-        {
-          id: 'l30d3',
-          title: 'Jury duty leave and compensation',
-          conversation: [
-            { type: 'user', text: 'What\'s our policy for jury duty leave and will I still get paid?' },
-            { type: 'assistant', text: 'Jury duty leave policy: 1) Notify your manager immediately upon receiving jury summons, 2) Submit copy of summons to HR, 3) Company provides full pay for first 5 days of jury service, 4) Submit jury duty certificate for payroll processing, 5) You keep any jury compensation received. If service extends beyond 5 days, additional time is unpaid but job-protected. Night shift employees should request day shift consideration. Use Workday to request "Jury Duty" time off type. Court parking and mileage may be reimbursed.' }
-          ]
-        },
-        {
-          id: 'l30d4',
-          title: 'Volunteer time off program benefits',
-          conversation: [
-            { type: 'user', text: 'Does the company offer volunteer time off? How does the program work?' },
-            { type: 'assistant', text: 'Yes! Our Volunteer Time Off (VTO) program provides 16 hours (2 days) of paid time annually for volunteer activities with qualified 501(c)(3) organizations. To use VTO: 1) Confirm organization\'s nonprofit status, 2) Submit volunteer opportunity for pre-approval via Workday "Time" > "Request Volunteer Time Off", 3) Include organization details and volunteer description, 4) Complete volunteer service, 5) Submit verification form with organization signature. VTO hours don\'t roll over and are separate from regular PTO.' }
-          ]
-        },
-        {
-          id: 'l30d5',
-          title: 'Lactation support and mother\'s room access',
-          conversation: [
-            { type: 'user', text: 'What lactation support does the company provide for nursing mothers?' },
-            { type: 'assistant', text: 'Lactation support includes: dedicated mother\'s rooms on each floor with comfortable seating, refrigeration for milk storage, and privacy locks. Rooms can be reserved through Workday "Space Reservations". You\'re entitled to reasonable break time for pumping for up to one year. Flexible schedule accommodations available through your manager. The company also provides lactation consultants, breast pump rental/purchase assistance, and shipping supplies for business travel. Contact HR for access card programming and additional resources.' }
-          ]
-        }
-      ]
-    };
   };
 
   const handleSendMessage = async () => {
@@ -1174,7 +1106,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           title: questionToSend.length > 50 ? questionToSend.substring(0, 50) + '...' : questionToSend,
           conversation: messages
         };
-        saveThreadToStorage(updatedThread);
+        await saveThreadToStorage(updatedThread);
         onFirstMessage && onFirstMessage(updatedThread);
       } else if (currentThread) {
         // Update existing thread
@@ -1182,7 +1114,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           ...currentThread,
           conversation: messages
         };
-        saveThreadToStorage(updatedThread);
+        await saveThreadToStorage(updatedThread);
       } else if (userQuestion && !currentThread) {
         // Create thread for main page question
         const newThread = {
@@ -1190,7 +1122,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           title: questionToSend.length > 50 ? questionToSend.substring(0, 50) + '...' : questionToSend,
           conversation: messages
         };
-        saveThreadToStorage(newThread);
+        await saveThreadToStorage(newThread);
         onFirstMessage && onFirstMessage(newThread);
       }
       

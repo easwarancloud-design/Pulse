@@ -7,7 +7,6 @@ const AISearchHero = ({ onSearch }) => {
   const [currentQuestionSet, setCurrentQuestionSet] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
-  const [allThreads, setAllThreads] = useState([]);
   const [showAboutBox, setShowAboutBox] = useState(false);
 
   // Predefined questions - fetched from API or fallback to defaults
@@ -39,44 +38,20 @@ const AISearchHero = ({ onSearch }) => {
     loadPredefinedQuestions();
   }, []);
 
-  // Load threads from localStorage
-  const loadThreadsFromStorage = () => {
-    try {
-      const stored = localStorage.getItem('chatThreads');
-      if (stored) {
-        const threadsData = JSON.parse(stored);
-        const allThreadsList = [
-          ...(threadsData.today || []),
-          ...(threadsData.yesterday || []),
-          ...(threadsData.lastWeek || []),
-          ...(threadsData.last30Days || [])
-        ];
-        return allThreadsList;
-      }
-    } catch (error) {
-      console.error('Error loading threads from localStorage:', error);
-    }
-    return [];
-  };
-
-  // Load threads on component mount
-  React.useEffect(() => {
-    setAllThreads(loadThreadsFromStorage());
-  }, []);
-
-  // Get filtered suggestions based on search query
+  // Get filtered suggestions - now only shows predefined questions
   const getFilteredSuggestions = (query) => {
     if (!query.trim()) {
-      // Return top 6 most recent threads when no search query
-      return allThreads.slice(0, 6);
+      // Return first 6 predefined questions when no search query
+      return allQuestions.slice(0, 6).map(q => ({ title: q, type: 'predefined' }));
     }
     
-    // Filter threads by title containing the search query (case insensitive)
-    const filtered = allThreads.filter(thread =>
-      thread.title.toLowerCase().includes(query.toLowerCase())
-    );
+    // Filter predefined questions containing the search query (case insensitive)
+    const filtered = allQuestions
+      .filter(question => question.toLowerCase().includes(query.toLowerCase()))
+      .slice(0, 6)
+      .map(q => ({ title: q, type: 'predefined' }));
     
-    return filtered.slice(0, 6);
+    return filtered;
   };
 
   // Handle input focus - show suggestions
@@ -98,18 +73,13 @@ const AISearchHero = ({ onSearch }) => {
 
   // Handle suggestion click
   const handleSuggestionClick = (suggestion) => {
-    if (typeof suggestion === 'string') {
-      // Handle predefined question suggestions - route to result page with question in input
+    if (suggestion.type === 'predefined' || typeof suggestion === 'string') {
+      // Handle predefined question suggestions
+      const questionText = suggestion.title || suggestion;
       setSearchQuery('');
       setShowSuggestions(false);
       // Pass question with special flag to indicate it should go to input field
-      onSearch(suggestion, null, 'predefined');
-    } else {
-      // Handle thread suggestions
-      setSearchQuery(suggestion.title);
-      setShowSuggestions(false);
-      // Pass both title and id to load specific conversation
-      onSearch(suggestion.title, suggestion.id);
+      onSearch(questionText, null, 'predefined');
     }
   };
 
@@ -301,7 +271,7 @@ const AISearchHero = ({ onSearch }) => {
                   borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
                 }}
               >
-                Previous Conversations
+                Suggested Questions
               </div>
 
               {/* Scrollable content */}
@@ -316,7 +286,7 @@ const AISearchHero = ({ onSearch }) => {
               >
                 {suggestions.map((suggestion, index) => (
                   <div
-                    key={suggestion.id}
+                    key={`suggestion-${index}`}
                     onClick={() => handleSuggestionClick(suggestion)}
                     className="flex items-center py-2 px-1 hover:bg-white/10 cursor-pointer transition-all duration-200"
                     style={{
@@ -337,7 +307,7 @@ const AISearchHero = ({ onSearch }) => {
                           textAlign: 'left'
                         }}
                       >
-                        {suggestion.title}
+                        {suggestion.title || suggestion}
                       </p>
                     </div>
                   </div>

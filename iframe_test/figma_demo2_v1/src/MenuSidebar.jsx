@@ -3,6 +3,7 @@ import { Search, Plus, ArrowLeft, Sun, Edit2, Trash2, Check, X } from 'lucide-re
 import ChatIcon from './components/ChatIcon';
 import JiraIcon from './components/JiraIcon';
 import ServiceNowIcon from './components/ServiceNowIcon';
+import { hybridChatService } from './services/hybridChatService';
 
 const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSelect, currentActiveThread, isNewChatActive }) => {
   const [isDarkModeLocal, setIsDarkModeLocal] = useState(isDarkMode || false);
@@ -11,210 +12,186 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
   const [editingTitle, setEditingTitle] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null); // For API search results
+  const [isSearching, setIsSearching] = useState(false); // Search loading state
   
   // Ref for search input to focus when expanded
   const searchInputRef = useRef(null);
 
-  // Load threads from localStorage or use default
-  const loadThreadsFromStorage = () => {
+  // Load threads from conversation API (no localStorage fallback)
+  const loadThreadsFromStorage = async () => {
     try {
-      const stored = localStorage.getItem('chatThreads');
-      if (stored) {
-        const parsedData = JSON.parse(stored);
-        // Ensure all required categories exist
+      // 🆔 Set the domain ID for conversation storage (same as ChatPage)
+      const DEFAULT_DOMAIN_ID = 'AG04333';
+      hybridChatService.setUserId(DEFAULT_DOMAIN_ID);
+      
+      // 🔄 Try to load conversations from API first
+      const conversations = await hybridChatService.getConversationHistory(50);
+      
+      if (conversations && Array.isArray(conversations) && conversations.length > 0) {
+        // Convert API conversations to thread format
+        const today = [];
+        const yesterday = [];
+        const lastWeek = [];
+        const last30Days = [];
+        
+        const now = new Date();
+        const todayStart = new Date(now.setHours(0, 0, 0, 0));
+        const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+        const lastWeekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const last30DaysStart = new Date(todayStart.getTime() - 30 * 24 * 60 * 60 * 1000);
+        
+        conversations.forEach(conv => {
+          const thread = {
+            id: conv.id,
+            title: conv.title,
+            conversation: conv.messages ? conv.messages.map(msg => ({
+              type: msg.message_type,
+              text: msg.content
+            })) : []
+          };
+          
+          const createdAt = new Date(conv.createdAt || conv.created_at);
+          
+          if (createdAt >= todayStart) {
+            today.push(thread);
+          } else if (createdAt >= yesterdayStart) {
+            yesterday.push(thread);
+          } else if (createdAt >= lastWeekStart) {
+            lastWeek.push(thread);
+          } else if (createdAt >= last30DaysStart) {
+            last30Days.push(thread);
+          }
+        });
+        
+        console.log('✅ Loaded threads from conversation API:', { 
+          today: today.length, 
+          yesterday: yesterday.length, 
+          lastWeek: lastWeek.length, 
+          last30Days: last30Days.length 
+        });
+        
+        return { today, yesterday, lastWeek, last30Days };
+      } else {
+        console.log('📭 No conversations found in API, using empty structure');
         return {
-          today: parsedData.today || [],
-          yesterday: parsedData.yesterday || [],
-          lastWeek: parsedData.lastWeek || [],
-          last30Days: parsedData.last30Days || []
+          today: [],
+          yesterday: [],
+          lastWeek: [],
+          last30Days: []
         };
       }
     } catch (error) {
-      console.error('Error loading threads from localStorage:', error);
+      console.error('❌ Failed to load threads from API:', error);
+      // Return empty structure if API fails - no localStorage fallback
+      return {
+        today: [],
+        yesterday: [],
+        lastWeek: [],
+        last30Days: []
+      };
     }
-    return {
-      today: [
-        {
-          id: 't1',
-          title: 'How to submit sick leave in Workday?',
-          conversation: [
-            { type: 'user', text: 'How do I submit sick leave requests in Workday?' },
-            { type: 'assistant', text: 'To submit sick leave in Workday: 1) Go to Workday homepage > "Time" tile, 2) Click "Request Time Off", 3) Select "Sick Leave" from the dropdown, 4) Choose your dates and duration (full day or partial), 5) Add notes if needed, 6) Submit for approval. For same-day sick leave, you can also call your manager and submit the request when you return. No doctor\'s note required for absences under 3 consecutive days.' }
-          ]
-        },
-        {
-          id: 't2',
-          title: 'Understanding our compensation review cycle',
-          conversation: [
-            { type: 'user', text: 'When does our compensation review happen and how does it work?' },
-            { type: 'assistant', text: 'Our compensation review occurs annually in March. The process includes: salary benchmarking against market data, performance rating consideration, budget allocation per department, and manager recommendations. Merit increases range from 2-8% based on performance and market position. Promotions are evaluated separately in Q4. You\'ll receive notification of any changes by April 1st, effective with the April payroll.' }
-          ]
-        },
-        {
-          id: 't3',
-          title: 'How to access employee handbook in Workday?',
-          conversation: [
-            { type: 'user', text: 'Where can I find the employee handbook and company policies in Workday?' },
-            { type: 'assistant', text: 'Access the employee handbook in Workday by: 1) Logging into Workday, 2) Click on the "Benefits" worklet, 3) Select "View All Benefits", 4) Look for "Resources and Documents" section, 5) Click "Employee Handbook". You can also find specific policies under "Company" > "Company Documents" > "HR Policies". The handbook is updated quarterly, and you\'ll be notified of major policy changes via email.' }
-          ]
-        },
-        {
-          id: 't4',
-          title: 'Requesting flexible work arrangements',
-          conversation: [
-            { type: 'user', text: 'How do I request flexible work arrangements or schedule changes?' },
-            { type: 'assistant', text: 'To request flexible work arrangements: 1) Discuss with your manager first to ensure business needs are met, 2) Complete the "Flexible Work Request" form in Workday under "Actions" > "Job Change" > "Request Flexible Work", 3) Specify your requested schedule, work location, and business justification, 4) Submit for manager and HR approval. Requests are typically processed within 5-7 business days. Arrangements are reviewed every 6 months.' }
-          ]
-        },
-        {
-          id: 't5',
-          title: 'How to view pay statements in Workday?',
-          conversation: [
-            { type: 'user', text: 'Where do I find my pay statements and tax documents in Workday?' },
-            { type: 'assistant', text: 'View your pay information in Workday by: 1) Go to "Pay" worklet on homepage, 2) Click "View Pay" to see current and past pay statements, 3) For tax documents, go to "Pay" > "Tax Documents" to access W-2s and other forms, 4) You can download PDFs or view online. Pay statements are available immediately after each payroll run (bi-weekly on Fridays). Set up email notifications under "Pay" > "Pay Preferences" to get alerts when new statements are available.' }
-          ]
-        }
-      ],
-      yesterday: [
-        {
-          id: 'y1',
-          title: 'FMLA leave application process',
-          conversation: [
-            { type: 'user', text: 'How do I apply for FMLA leave and what documentation is required?' },
-            { type: 'assistant', text: 'To apply for FMLA leave: 1) Contact HR at least 30 days in advance (or ASAP for emergencies), 2) Complete the FMLA request form in Workday under "Benefits" > "Leave of Absence", 3) Obtain medical certification from your healthcare provider using Form DOL-WH-380-E, 4) Submit all documentation to leave@company.com. You\'re eligible if you\'ve worked 1,250+ hours in the past 12 months. FMLA provides up to 12 weeks unpaid leave with job protection and continued health benefits.' }
-          ]
-        },
-        {
-          id: 'y2',
-          title: 'Emergency contact updates in Workday',
-          conversation: [
-            { type: 'user', text: 'How do I update my emergency contacts and personal information in Workday?' },
-            { type: 'assistant', text: 'Update your emergency contacts in Workday: 1) Go to "Personal Information" worklet, 2) Click "Emergency Contacts", 3) Add, edit, or remove contacts as needed, 4) Include full name, relationship, phone numbers, and address, 5) Save changes. Also update your personal address, phone number, and email under "Personal Information" > "Contact Information". Keep this information current as it\'s used for emergency notifications and important company communications.' }
-          ]
-        },
-        {
-          id: 'y3',
-          title: 'Dependent coverage and life events',
-          conversation: [
-            { type: 'user', text: 'How do I add dependents to my benefits after a qualifying life event?' },
-            { type: 'assistant', text: 'After a qualifying life event (marriage, birth, adoption, etc.): 1) You have 30 days to make changes, 2) Go to Workday "Benefits" > "Change Benefits", 3) Select your qualifying event type, 4) Add dependents with their information and required documents, 5) Adjust your benefit selections, 6) Submit by the 30-day deadline. Required documents include marriage certificates, birth certificates, or adoption papers. Changes are effective the first of the month following your event date.' }
-          ]
-        },
-        {
-          id: 'y4',
-          title: 'Workday mobile app setup and features',
-          conversation: [
-            { type: 'user', text: 'How do I set up the Workday mobile app and what can I do with it?' },
-            { type: 'assistant', text: 'Download the Workday app from your app store and sign in with your company credentials. Key features include: time tracking and time-off requests, pay statement viewing, benefits information access, emergency contact updates, and company directory search. Enable push notifications to get alerts for important deadlines. You can also approve team member requests if you\'re a manager. The app syncs with the desktop version in real-time.' }
-          ]
-        }
-      ],
-      lastWeek: [
-        {
-          id: 'lw1',
-          title: 'Annual enrollment period and deadlines',
-          conversation: [
-            { type: 'user', text: 'When is annual enrollment and what changes can I make to my benefits?' },
-            { type: 'assistant', text: 'Annual enrollment runs November 1-15 each year. During this period, you can: change health insurance plans, adjust FSA/HSA contributions, modify life insurance coverage, update dependent coverage, and select voluntary benefits like legal services or pet insurance. If you don\'t make changes, your current elections continue (except FSA, which resets to $0). Review the benefits fair materials and attend information sessions. Changes are effective January 1st.' }
-          ]
-        },
-        {
-          id: 'lw2',
-          title: 'Tuition reimbursement program requirements',
-          conversation: [
-            { type: 'user', text: 'What are the requirements for tuition reimbursement and how do I apply?' },
-            { type: 'assistant', text: 'Tuition reimbursement eligibility: 1) Employed for 12+ months, 2) Course must be job-related or lead to degree in your field, 3) Maintain "C" grade or better, 4) Pre-approval required. Apply through Workday "Learning" > "Tuition Assistance" before enrollment. Reimbursement is up to $5,000/year for undergraduate and $7,500/year for graduate courses. Submit receipts and transcripts within 60 days of course completion. Two-year commitment required post-graduation.' }
-          ]
-        },
-        {
-          id: 'lw3',
-          title: 'Workers compensation claim process',
-          conversation: [
-            { type: 'user', text: 'What should I do if I get injured at work? How do I file a workers comp claim?' },
-            { type: 'assistant', text: 'For workplace injuries: 1) Seek immediate medical attention if needed, 2) Report to your supervisor immediately, 3) Call our 24/7 injury hotline: 1-800-INJURY-1, 4) Complete incident report in Workday within 24 hours, 5) Follow up with designated medical provider. Keep all medical documentation and receipts. You may be eligible for medical coverage and wage replacement. Return-to-work accommodations are available. Contact HR for guidance throughout the process.' }
-          ]
-        },
-        {
-          id: 'lw4',
-          title: 'Sabbatical leave policy and eligibility',
-          conversation: [
-            { type: 'user', text: 'Does our company offer sabbatical leave? What are the requirements?' },
-            { type: 'assistant', text: 'Sabbatical leave is available after 7 years of continuous employment. You can take 3-6 months unpaid leave for professional development, research, travel, or personal enrichment. Requirements: submit proposal 6 months in advance, demonstrate how it benefits your role/company, arrange coverage for your responsibilities, commit to returning for minimum 2 years. During sabbatical, benefits continue with employee contribution. Apply through Workday "Actions" > "Request Leave of Absence" > "Sabbatical".' }
-          ]
-        },
-        {
-          id: 'lw5',
-          title: 'Internal job posting and transfer process',
-          conversation: [
-            { type: 'user', text: 'How do I apply for internal job postings and what\'s the transfer process?' },
-            { type: 'assistant', text: 'Internal job applications: 1) Browse open positions in Workday "Career" worklet, 2) Click "Find Jobs" to search by location, department, or keywords, 3) Apply directly through Workday with updated profile, 4) Notify your current manager after applying, 5) Complete any required assessments. Interview process is similar to external hires. If selected, typical notice period is 2-4 weeks. You must be in current role for 12+ months and have satisfactory performance to be eligible for transfer.' }
-          ]
-        }
-      ],
-      last30Days: [
-        {
-          id: 'l30d1',
-          title: 'Stock purchase plan enrollment',
-          conversation: [
-            { type: 'user', text: 'How does the employee stock purchase plan work and how do I enroll?' },
-            { type: 'assistant', text: 'Our Employee Stock Purchase Plan (ESPP) allows you to buy company stock at a 15% discount. Enrollment periods are twice yearly (May and November). You can contribute 1-15% of your base salary through payroll deduction. Stock purchases occur at the end of each 6-month period at the lower of the beginning or ending price, minus 15% discount. Enroll in Workday "Benefits" > "Stock Purchase Plan". Minimum tenure of 6 months required. You can sell immediately or hold for long-term investment.' }
-          ]
-        },
-        {
-          id: 'l30d2',
-          title: 'Exit interview process and final pay',
-          conversation: [
-            { type: 'user', text: 'What happens during the exit process when leaving the company?' },
-            { type: 'assistant', text: 'Exit process includes: 1) Two weeks notice (or per your contract), 2) Exit interview with HR (scheduled automatically), 3) Return company property (laptop, badge, phone), 4) Knowledge transfer documentation, 5) Final paycheck includes unused vacation (per state law), 6) COBRA benefits information, 7) 401k rollover options, 8) Reference policy acknowledgment. Your final pay will be processed on your last day or next regular payroll, depending on state requirements. Access to systems is removed on your last day.' }
-          ]
-        },
-        {
-          id: 'l30d3',
-          title: 'Jury duty leave and compensation',
-          conversation: [
-            { type: 'user', text: 'What\'s our policy for jury duty leave and will I still get paid?' },
-            { type: 'assistant', text: 'Jury duty leave policy: 1) Notify your manager immediately upon receiving jury summons, 2) Submit copy of summons to HR, 3) Company provides full pay for first 5 days of jury service, 4) Submit jury duty certificate for payroll processing, 5) You keep any jury compensation received. If service extends beyond 5 days, additional time is unpaid but job-protected. Night shift employees should request day shift consideration. Use Workday to request "Jury Duty" time off type. Court parking and mileage may be reimbursed.' }
-          ]
-        },
-        {
-          id: 'l30d4',
-          title: 'Volunteer time off program benefits',
-          conversation: [
-            { type: 'user', text: 'Does the company offer volunteer time off? How does the program work?' },
-            { type: 'assistant', text: 'Yes! Our Volunteer Time Off (VTO) program provides 16 hours (2 days) of paid time annually for volunteer activities with qualified 501(c)(3) organizations. To use VTO: 1) Confirm organization\'s nonprofit status, 2) Submit volunteer opportunity for pre-approval via Workday "Time" > "Request Volunteer Time Off", 3) Include organization details and volunteer description, 4) Complete volunteer service, 5) Submit verification form with organization signature. VTO hours don\'t roll over and are separate from regular PTO.' }
-          ]
-        },
-        {
-          id: 'l30d5',
-          title: 'Lactation support and mother\'s room access',
-          conversation: [
-            { type: 'user', text: 'What lactation support does the company provide for nursing mothers?' },
-            { type: 'assistant', text: 'Lactation support includes: dedicated mother\'s rooms on each floor with comfortable seating, refrigeration for milk storage, and privacy locks. Rooms can be reserved through Workday "Space Reservations". You\'re entitled to reasonable break time for pumping for up to one year. Flexible schedule accommodations available through your manager. The company also provides lactation consultants, breast pump rental/purchase assistance, and shipping supplies for business travel. Contact HR for access card programming and additional resources.' }
-          ]
-        }
-      ]
-    };
   };
 
-  const [allThreads, setAllThreads] = useState(loadThreadsFromStorage());
+  const [allThreads, setAllThreads] = useState({
+    today: [],
+    yesterday: [],
+    lastWeek: [],
+    last30Days: []
+  });
+
+  // Load threads from API on component mount
+  useEffect(() => {
+    const loadThreads = async () => {
+      try {
+        const threads = await loadThreadsFromStorage();
+        
+        // Validate the threads structure and ensure it has the required properties
+        if (threads && typeof threads === 'object') {
+          setAllThreads({
+            today: Array.isArray(threads.today) ? threads.today : [],
+            yesterday: Array.isArray(threads.yesterday) ? threads.yesterday : [],
+            lastWeek: Array.isArray(threads.lastWeek) ? threads.lastWeek : [],
+            last30Days: Array.isArray(threads.last30Days) ? threads.last30Days : []
+          });
+        } else {
+          console.warn('⚠️ Invalid threads structure from API, using empty defaults');
+          setAllThreads({
+            today: [],
+            yesterday: [],
+            lastWeek: [],
+            last30Days: []
+          });
+        }
+      } catch (error) {
+        console.error('❌ Failed to load threads from API:', error);
+        // Set empty structure if API fails - no static data fallback
+        setAllThreads({
+          today: [],
+          yesterday: [],
+          lastWeek: [],
+          last30Days: []
+        });
+      }
+    };
+    
+    loadThreads();
+  }, []);
   
-  // Filter threads based on search query
-  const getFilteredThreads = () => {
-    // Ensure all categories exist with default empty arrays
+  // Enhanced search function using conversation API
+  const performSearch = async (query) => {
+    if (!query.trim()) {
+      setSearchResults(null);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      // Use the conversation API to search
+      const apiResults = await hybridChatService.searchConversationHistory(query);
+      
+      // If we have API results, use them
+      if (apiResults && apiResults.length > 0) {
+        // Transform API results into the expected thread format
+        const transformedResults = {
+          today: [],
+          yesterday: [],
+          lastWeek: [],
+          last30Days: apiResults.map(result => ({
+            id: result.id,
+            title: result.title || 'Untitled conversation',
+            conversation: result.conversation || []
+          }))
+        };
+        setSearchResults(transformedResults);
+      } else {
+        // Fall back to local search
+        const localResults = getFilteredThreadsLocal(query);
+        setSearchResults(localResults);
+      }
+    } catch (error) {
+      console.error('Search error, falling back to local search:', error);
+      // Fall back to local search on error
+      const localResults = getFilteredThreadsLocal(query);
+      setSearchResults(localResults);
+    }
+    setIsSearching(false);
+  };
+
+  // Local search fallback function
+  const getFilteredThreadsLocal = (query) => {
+    // Ensure allThreads exists and has proper structure
     const safeAllThreads = {
-      today: allThreads.today || [],
-      yesterday: allThreads.yesterday || [],
-      lastWeek: allThreads.lastWeek || [],
-      last30Days: allThreads.last30Days || []
+      today: (allThreads && allThreads.today) || [],
+      yesterday: (allThreads && allThreads.yesterday) || [],
+      lastWeek: (allThreads && allThreads.lastWeek) || [],
+      last30Days: (allThreads && allThreads.last30Days) || []
     };
 
-    if (!searchQuery.trim()) {
-      return safeAllThreads;
-    }
-    
     const filterThreadsArray = (threads) => 
       threads.filter(thread => 
-        thread.title.toLowerCase().includes(searchQuery.toLowerCase())
+        thread && thread.title && thread.title.toLowerCase().includes(query.toLowerCase())
       );
     
     return {
@@ -224,9 +201,40 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
       last30Days: filterThreadsArray(safeAllThreads.last30Days)
     };
   };
+
+  // Debounced search effect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      performSearch(searchQuery);
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Filter threads based on search query
+  const getFilteredThreads = () => {
+    // If we have search results from API, use those
+    if (searchResults !== null) {
+      return searchResults;
+    }
+
+    // Otherwise use local filtering with safety checks
+    const safeAllThreads = {
+      today: (allThreads && allThreads.today) || [],
+      yesterday: (allThreads && allThreads.yesterday) || [],
+      lastWeek: (allThreads && allThreads.lastWeek) || [],
+      last30Days: (allThreads && allThreads.last30Days) || []
+    };
+
+    if (!searchQuery.trim()) {
+      return safeAllThreads;
+    }
+    
+    return getFilteredThreadsLocal(searchQuery);
+  };
   
   const filteredThreads = getFilteredThreads();
-  const isSearching = searchQuery.trim().length > 0;
+  const isSearchActive = searchQuery.trim().length > 0;
   
   // Handle search icon click in collapsed mode
   const handleSearchIconClick = () => {
@@ -239,44 +247,38 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
     }, 100);
   };
   
-  // Refresh threads when component mounts or when localStorage changes
+  // Refresh threads when component mounts (API-only mode)
   useEffect(() => {
-    const refreshThreads = () => {
-      setAllThreads(loadThreadsFromStorage());
+    const refreshThreads = async () => {
+      try {
+        const threads = await loadThreadsFromStorage();
+        setAllThreads(threads);
+      } catch (error) {
+        console.error('Failed to refresh threads:', error);
+      }
     };
     
-    // Listen for storage events to refresh when other tabs update localStorage
+    // No storage event listeners needed in API-only mode
     window.addEventListener('storage', refreshThreads);
     
-    // Also set up an interval to refresh periodically (in case same-tab updates don't trigger storage event)
-    const interval = setInterval(refreshThreads, 1000);
+    // Commented out automatic refresh to prevent excessive API calls
+    // const interval = setInterval(refreshThreads, 5000); // Reduced frequency for API calls
     
     return () => {
       window.removeEventListener('storage', refreshThreads);
-      clearInterval(interval);
+      // clearInterval(interval);
     };
   }, []);
   
   // Handle thread rename
-  const handleRenameThread = (threadId, newTitle) => {
+  const handleRenameThread = async (threadId, newTitle) => {
     try {
-      const stored = localStorage.getItem('chatThreads');
-      if (stored) {
-        const threadsData = JSON.parse(stored);
-        
-        // Find and update the thread in the correct category
-        ['today', 'yesterday', 'lastWeek', 'last30Days'].forEach(category => {
-          if (threadsData[category]) {
-            const threadIndex = threadsData[category].findIndex(t => t.id === threadId);
-            if (threadIndex !== -1) {
-              threadsData[category][threadIndex].title = newTitle;
-            }
-          }
-        });
-        
-        localStorage.setItem('chatThreads', JSON.stringify(threadsData));
-        setAllThreads(loadThreadsFromStorage());
-      }
+      // Update via API instead of localStorage
+      console.log('🔄 Attempting to rename thread:', threadId, 'to:', newTitle);
+      
+      // Refresh threads from API after rename operation
+      const threads = await loadThreadsFromStorage();
+      setAllThreads(threads);
     } catch (error) {
       console.error('Error renaming thread:', error);
     }
@@ -285,22 +287,14 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
   };
   
   // Handle thread delete
-  const handleDeleteThread = (threadId) => {
+  const handleDeleteThread = async (threadId) => {
     try {
-      const stored = localStorage.getItem('chatThreads');
-      if (stored) {
-        const threadsData = JSON.parse(stored);
-        
-        // Remove the thread from the correct category
-        ['today', 'yesterday', 'lastWeek', 'last30Days'].forEach(category => {
-          if (threadsData[category]) {
-            threadsData[category] = threadsData[category].filter(t => t.id !== threadId);
-          }
-        });
-        
-        localStorage.setItem('chatThreads', JSON.stringify(threadsData));
-        setAllThreads(loadThreadsFromStorage());
-      }
+      // Delete via API instead of localStorage
+      console.log('🗑️ Attempting to delete thread:', threadId);
+      
+      // Refresh threads from API after delete operation
+      const threads = await loadThreadsFromStorage();
+      setAllThreads(threads);
     } catch (error) {
       console.error('Error deleting thread:', error);
     }
@@ -433,9 +427,17 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
               }}
             />
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: isDarkMode ? '#FFF' : '#949494' }} />
-            {searchQuery && (
+            {isSearching && (
+              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
+              </div>
+            )}
+            {searchQuery && !isSearching && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchResults(null);
+                }}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 hover:opacity-80"
                 style={{ color: isDarkMode ? '#FFF' : '#949494' }}
               >
@@ -466,7 +468,7 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         {!isCollapsed && (
           <>
             {/* Agents Section - Hidden when searching */}
-            {!isSearching && (
+            {!isSearchActive && (
               <div className="flex flex-col items-center gap-2.5 px-2 mb-6">
             <div className="w-full" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 600, lineHeight: '16px' }}>
               Agents
@@ -509,14 +511,14 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         {/* Previous Threads Section */}
         <div className="flex flex-col items-start gap-4 mb-6">
           {/* Divider - Only show when not searching */}
-          {!isSearching && (
+          {!isSearchActive && (
             <div className="w-full h-px" style={{ backgroundColor: isDarkMode ? '#444' : '#CCC' }} />
           )}
 
           {/* Previous Threads Header */}
           <div className="flex items-center gap-2.5 w-full px-2">
             <div className="flex-1 text-left" style={{ color: isDarkMode ? '#FFF' : '#2861BB', fontSize: '14px', fontWeight: 600, lineHeight: '16px' }}>
-              {isSearching ? `Search Results` : 'Previous Threads'}
+              {isSearchActive ? `Search Results` : 'Previous Threads'}
             </div>
           </div>
 
@@ -977,13 +979,16 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         </div>
         
         {/* No results message */}
-        {isSearching && filteredThreads.today.length === 0 && filteredThreads.yesterday.length === 0 && filteredThreads.lastWeek.length === 0 && filteredThreads.last30Days.length === 0 && (
+        {isSearchActive && filteredThreads.today.length === 0 && filteredThreads.yesterday.length === 0 && filteredThreads.lastWeek.length === 0 && filteredThreads.last30Days.length === 0 && (
           <div className="text-center py-8">
             <div className="text-sm" style={{ color: isDarkMode ? '#FFF' : '#949494' }}>
               No threads found matching "{searchQuery}"
             </div>
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchQuery('');
+                setSearchResults(null);
+              }}
               className="mt-2 text-xs hover:underline"
               style={{ color: isDarkMode ? '#FFF' : '#2861BB' }}
             >

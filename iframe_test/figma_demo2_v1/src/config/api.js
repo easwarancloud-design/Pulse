@@ -8,6 +8,8 @@ export const API_BASE_URLS = {
   WORKFORCE_AGENT: 'https://workforceagent.elevancehealth.com',
   SERVICE_NOW: 'https://elevancehealth.service-now.com',
   OKTA: 'https://portalssoqa.elevancehealth.com',
+  // Use local FastAPI server for conversation storage (for development)
+  LOCAL_CONVERSATION_API: 'http://localhost:8000',
 };
 
 // API Endpoints
@@ -18,6 +20,16 @@ export const API_ENDPOINTS = {
   USER_TO_AGENT: `${API_BASE_URLS.WORKFORCE_AGENT}/user/to/agent/servicenow`,
   PREDEFINED_QUESTIONS: `${API_BASE_URLS.WORKFORCE_AGENT}/api/predefined_questions`,
   WEBSOCKET: (requestId) => `wss://workforceagent.elevancehealth.com/ws/${requestId}`,
+  
+  // Local Conversation API endpoints
+  CONVERSATIONS: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations`,
+  CONVERSATION_BY_ID: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}`,
+  CONVERSATION_MESSAGES: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages`,
+  CONVERSATION_MESSAGES_BULK: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages/bulk`,
+  CONVERSATION_SEARCH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/search`,
+  USER_CONVERSATIONS: (userId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/user/${userId}`,
+  USER_SESSION: (userId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/session/${userId}`,
+  CONVERSATION_HEALTH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/health`,
   
   // ServiceNow endpoints
   SERVICENOW_HR_CATALOG: `${API_BASE_URLS.SERVICE_NOW}/esc?id=elevance_health_hrsd_catalog`,

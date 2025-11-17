@@ -5,7 +5,10 @@ import PulseMain from './PulseMain';
 import ChatPage from './ChatPage'; // Light mode
 import PulseEmbedded from './PulseEmbedded';
 import PulseEmbeddedOld from './PulseEmbeddedOld';
+import ChatServiceTester from './components/ChatServiceTester';
+import ChatIntegrationDemo from './components/ChatIntegrationDemo';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { hybridChatService } from './services/hybridChatService';
 import './App.css';
 
 function AppContent() {
@@ -121,29 +124,18 @@ function AppContent() {
     navigate(`/resultpage?${params.toString()}`);
   };
 
-  const loadExistingConversation = (conversationId) => {
+  const loadExistingConversation = async (conversationId) => {
     try {
-      // First check MenuSidebarDark for static data
-      const staticThreads = getStaticThreadsData();
-      let foundThread = staticThreads.find(thread => thread.id === conversationId);
+      // Try to load conversation from API first
+      const fullConversation = await hybridChatService.getConversation(conversationId);
       
-      if (!foundThread) {
-        // Check localStorage for saved threads
-        const stored = localStorage.getItem('chatThreads');
-        if (stored) {
-          const threadsData = JSON.parse(stored);
-          const allStoredThreads = [
-            ...(threadsData.today || []),
-            ...(threadsData.yesterday || []),
-            ...(threadsData.lastWeek || []),
-            ...(threadsData.last30Days || [])
-          ];
-          foundThread = allStoredThreads.find(thread => thread.id === conversationId);
-        }
-      }
-      
-      if (foundThread) {
-        setCurrentThread(foundThread);
+      if (fullConversation && fullConversation.conversation) {
+        // Use the conversation data from API
+        setCurrentThread({
+          id: conversationId,
+          title: fullConversation.title || 'Conversation',
+          conversation: fullConversation.conversation
+        });
         setUserQuestion('');
         setIsNewChat(false);
         setIsNewChatActive(false);
@@ -153,64 +145,9 @@ function AppContent() {
         handleNewChat();
       }
     } catch (error) {
-      console.error('Error loading conversation:', error);
+      console.error('Error loading conversation from API:', error);
       handleNewChat();
     }
-  };
-
-  // Helper function to get static threads from MenuSidebarDark
-  const getStaticThreadsData = () => {
-    // This should match the data structure in MenuSidebarDark.jsx
-    return [
-      {
-        id: 'lw1',
-        title: 'Can you create a service IT ticket for me ...',
-        conversation: [
-          { type: 'user', text: 'Can you create a service IT ticket for me to reset my password?' },
-          { type: 'assistant', text: 'I\'d be happy to help you create a service IT ticket for password reset. Let me guide you through the process.' }
-        ]
-      },
-      {
-        id: 'lw2',
-        title: 'Can you find confluence pages related ...',
-        conversation: [
-          { type: 'user', text: 'Can you find confluence pages related to our project documentation?' },
-          { type: 'assistant', text: 'I\'ll search for confluence pages related to your project. Here are the relevant documents I found...' }
-        ]
-      },
-      {
-        id: 'lw3',
-        title: 'What are the latest project updates for ...',
-        conversation: [
-          { type: 'user', text: 'What are the latest project updates for the Q4 initiatives?' },
-          { type: 'assistant', text: 'Here are the latest updates for your Q4 initiatives based on the most recent data...' }
-        ]
-      },
-      {
-        id: 'lw4',
-        title: 'What are the key metrics we should ...',
-        conversation: [
-          { type: 'user', text: 'What are the key metrics we should track for our team performance?' },
-          { type: 'assistant', text: 'Based on your team\'s objectives, here are the key performance metrics you should track...' }
-        ]
-      },
-      {
-        id: 'l30d1',
-        title: 'How do I access the company VPN ...',
-        conversation: [
-          { type: 'user', text: 'How do I access the company VPN from my home office?' },
-          { type: 'assistant', text: 'Here\'s a step-by-step guide to access the company VPN from your home office...' }
-        ]
-      },
-      {
-        id: 'l30d2',
-        title: 'What are the holiday schedules for ...',
-        conversation: [
-          { type: 'user', text: 'What are the holiday schedules for this year?' },
-          { type: 'assistant', text: 'Here are the company holiday schedules for this year...' }
-        ]
-      }
-    ];
   };
 
   const navigateToMain = () => {
@@ -284,39 +221,30 @@ function AppContent() {
     // Navigate to result page for new chat
     navigate('/resultpage');
     
-    // Save the new thread to localStorage in the grouped format
-    try {
-      const stored = localStorage.getItem('chatThreads');
-      let threadsData;
-      
-      if (stored) {
-        threadsData = JSON.parse(stored);
-        // Ensure the structure exists
-        if (!threadsData.today) threadsData.today = [];
-        if (!threadsData.yesterday) threadsData.yesterday = [];
-        if (!threadsData.lastWeek) threadsData.lastWeek = [];
-        if (!threadsData.last30Days) threadsData.last30Days = [];
-      } else {
-        // Create the initial structure if none exists
-        threadsData = {
-          today: [],
-          yesterday: [],
-          lastWeek: [],
-          last30Days: []
-        };
-      }
-      
-      // Add the new thread to today's category
-      threadsData.today.unshift(newThread);
-      
-      localStorage.setItem('chatThreads', JSON.stringify(threadsData));
-    } catch (error) {
-      console.error('Error saving new thread to localStorage:', error);
-    }
+    // Note: Thread will be saved to API when first message is sent
   };
 
-  const handleThreadSelect = (thread) => {
-    setCurrentThread(thread);
+  const handleThreadSelect = async (thread) => {
+    try {
+      // Try to load the full conversation from API
+      const fullConversation = await hybridChatService.getConversation(thread.id);
+      
+      if (fullConversation && fullConversation.conversation) {
+        // Use the full conversation data from API
+        setCurrentThread({
+          ...thread,
+          conversation: fullConversation.conversation
+        });
+      } else {
+        // Fall back to the thread data we already have
+        setCurrentThread(thread);
+      }
+    } catch (error) {
+      console.error('Error loading conversation from API, using cached data:', error);
+      // Fall back to the thread data we already have
+      setCurrentThread(thread);
+    }
+    
     setIsNewChat(false);
     setIsNewChatActive(false);
     setUserQuestion('');
@@ -335,6 +263,22 @@ function AppContent() {
         element={
           <div className="App">
             <Mainpage onSearch={navigateToResults} onNewChat={handleNewChat} />
+          </div>
+        } 
+      />
+      <Route 
+        path="/test-chat-service" 
+        element={
+          <div className="App">
+            <ChatServiceTester />
+          </div>
+        } 
+      />
+      <Route 
+        path="/demo-chat" 
+        element={
+          <div className="App">
+            <ChatIntegrationDemo />
           </div>
         } 
       />

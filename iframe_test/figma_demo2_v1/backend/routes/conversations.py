@@ -326,31 +326,33 @@ async def health_check():
 # ================================================
 # ERROR HANDLERS
 # ================================================
+# Note: Exception handlers cannot be attached to APIRouter
+# They should be added to the FastAPI app instance in app.py if needed
 
-@router.exception_handler(ValueError)
-async def value_error_handler(request, exc):
-    """Handle ValueError exceptions"""
-    return JSONResponse(
-        status_code=400,
-        content=ErrorResponse(
-            success=False,
-            message="Invalid request data",
-            error=str(exc)
-        ).dict()
-    )
+# @router.exception_handler(ValueError)
+# async def value_error_handler(request, exc):
+#     """Handle ValueError exceptions"""
+#     return JSONResponse(
+#         status_code=400,
+#         content=ErrorResponse(
+#             success=False,
+#             message="Invalid request data",
+#             error=str(exc)
+#         ).dict()
+#     )
 
-@router.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    """Handle general exceptions"""
-    logger.error(f"Unhandled exception in conversation routes: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content=ErrorResponse(
-            success=False,
-            message="Internal server error",
-            error="An unexpected error occurred"
-        ).dict()
-    )
+# @router.exception_handler(Exception)
+# async def general_exception_handler(request, exc):
+#     """Handle general exceptions"""
+#     logger.error(f"Unhandled exception in conversation routes: {exc}")
+#     return JSONResponse(
+#         status_code=500,
+#         content=ErrorResponse(
+#             success=False,
+#             message="Internal server error",
+#             error="An unexpected error occurred"
+#         ).dict()
+#     )
 
 # ================================================
 # UTILITY ENDPOINTS FOR DEVELOPMENT

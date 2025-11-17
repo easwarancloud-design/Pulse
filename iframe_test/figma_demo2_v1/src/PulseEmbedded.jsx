@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ChatIcon from './components/ChatIcon';
 import { fetchPredefinedQuestions } from './services/predefinedQuestionsService';
+import hybridChatService from './services/hybridChatService';
 
 const PulseEmbedded = ({ userInfo }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,22 +148,27 @@ const PulseEmbedded = ({ userInfo }) => {
     }
   };
 
-  // Load threads from localStorage
-  const loadThreadsFromStorage = () => {
+  // Load threads from API (no localStorage fallback)
+  const loadThreadsFromStorage = async () => {
     try {
-      const stored = localStorage.getItem('chatThreads');
-      if (stored) {
-        const threadsData = JSON.parse(stored);
-        const allThreadsList = [
-          ...(threadsData.today || []),
-          ...(threadsData.yesterday || []),
-          ...(threadsData.lastWeek || []),
-          ...(threadsData.last30Days || [])
-        ];
-        return allThreadsList;
+      // Use hybrid chat service for API-based thread loading
+      const DEFAULT_DOMAIN_ID = 'AG04333';
+      hybridChatService.setUserId(DEFAULT_DOMAIN_ID);
+      
+      const conversations = await hybridChatService.getConversationHistory(50);
+      if (conversations && conversations.length > 0) {
+        // Convert API conversations to thread format
+        return conversations.map(conv => ({
+          id: conv.id,
+          title: conv.title,
+          conversation: conv.messages ? conv.messages.map(msg => ({
+            type: msg.message_type,
+            text: msg.content
+          })) : []
+        }));
       }
     } catch (error) {
-      console.error('Error loading threads from localStorage:', error);
+      console.error('Error loading threads from API:', error);
     }
     return [];
   };
