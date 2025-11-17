@@ -85,7 +85,12 @@ export class ConversationStorageService {
    */
   async getConversation(conversationId, includeMessages = true) {
     try {
-      const url = `${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?include_messages=${includeMessages}`;
+      const params = new URLSearchParams({
+        user_id: this.defaultUserId,
+        include_messages: includeMessages.toString()
+      });
+      
+      const url = `${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?${params}`;
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -107,7 +112,11 @@ export class ConversationStorageService {
    */
   async updateConversation(conversationId, updates) {
     try {
-      const response = await fetch(API_ENDPOINTS.CONVERSATION_BY_ID(conversationId), {
+      const params = new URLSearchParams({
+        user_id: this.defaultUserId
+      });
+      
+      const response = await fetch(`${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?${params}`, {
         method: 'PUT',
         headers: API_HEADERS.JSON,
         body: JSON.stringify(updates)

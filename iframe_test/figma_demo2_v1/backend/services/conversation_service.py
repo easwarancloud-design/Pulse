@@ -72,13 +72,13 @@ class ConversationService:
                 ))
                 await conn.commit()
             
-            # Cache in Redis
-            await self._cache_conversation(conversation)
-            await self._update_user_conversations_cache(conversation.user_id, conversation)
-            await self._cache_conversation_title(conversation.user_id, conversation.id, conversation.title)
+            # Cache in Redis (commented out for now)
+            # await self._cache_conversation(conversation)
+            # await self._update_user_conversations_cache(conversation.user_id, conversation)
+            # await self._cache_conversation_title(conversation.user_id, conversation.id, conversation.title)
             
-            # Update user session
-            await self._update_user_session_activity(conversation.user_id, conversation.id)
+            # Update user session (commented out for now)
+            # await self._update_user_session_activity(conversation.user_id, conversation.id)
             
             logger.info(f"Created conversation {conversation_id} for user {conversation.user_id}")
             return ConversationResponse(**conversation.dict(), messages=[])
@@ -90,12 +90,12 @@ class ConversationService:
     async def get_conversation(self, conversation_id: str, user_id: str) -> Optional[ConversationResponse]:
         """Get conversation by ID with all messages"""
         try:
-            # Try Redis cache first
-            cached_conversation = await self._get_cached_conversation(conversation_id)
-            if cached_conversation and cached_conversation.user_id == user_id:
-                # Get cached messages
-                messages = await self._get_cached_messages(conversation_id)
-                return ConversationResponse(**cached_conversation.dict(), messages=messages)
+            # Try Redis cache first (commented out for now)
+            # cached_conversation = await self._get_cached_conversation(conversation_id)
+            # if cached_conversation and cached_conversation.user_id == user_id:
+            #     # Get cached messages
+            #     messages = await self._get_cached_messages(conversation_id)
+            #     return ConversationResponse(**cached_conversation.dict(), messages=messages)
             
             # Fallback to database
             conversation = await self._get_conversation_from_db(conversation_id, user_id)
@@ -189,8 +189,8 @@ class ConversationService:
                 await conn.commit()
             
             if affected_rows > 0:
-                # Remove from caches
-                await self._remove_conversation_from_cache(user_id, conversation_id)
+                # Remove from caches (commented out for now)
+                # await self._remove_conversation_from_cache(user_id, conversation_id)
                 logger.info(f"Deleted conversation {conversation_id}")
                 return True
             
@@ -250,9 +250,9 @@ class ConversationService:
             
             message.reference_links = reference_links
             
-            # Update conversation cache
-            await self._add_message_to_cache(conversation_id, message)
-            await self._update_user_session_activity(user_id, conversation_id)
+            # Update conversation cache (commented out for now)
+            # await self._add_message_to_cache(conversation_id, message)
+            # await self._update_user_session_activity(user_id, conversation_id)
             
             # Note: Conversation stats are updated by database trigger
             
@@ -346,10 +346,10 @@ class ConversationService:
                                    offset: int = 0) -> List[ConversationSummary]:
         """Get user's conversations with pagination"""
         try:
-            # Try Redis cache first
-            cached_conversations = await self._get_user_conversations_from_cache(user_id, limit, offset)
-            if cached_conversations:
-                return cached_conversations
+            # Try Redis cache first (commented out for now)
+            # cached_conversations = await self._get_user_conversations_from_cache(user_id, limit, offset)
+            # if cached_conversations:
+            #     return cached_conversations
             
             # Fallback to database
             async with self.mysql() as (cursor, conn):
@@ -379,8 +379,8 @@ class ConversationService:
                 for row in rows
             ]
             
-            # Cache the results
-            await self._cache_user_conversations(user_id, conversations)
+            # Cache the results (commented out for now)
+            # await self._cache_user_conversations(user_id, conversations)
             
             return conversations
             
@@ -507,20 +507,21 @@ class ConversationService:
             # Convert to ConversationSummary objects
             results = []
             for match in paginated_matches:
-                # Get full conversation from cache if available
-                conversation = await self._get_cached_conversation(match['id'])
-                if conversation and conversation.user_id == user_id:
-                    results.append(ConversationSummary(
-                        id=conversation.id,
-                        user_id=conversation.user_id,
-                        title=conversation.title,
-                        summary=conversation.summary,
-                        status=conversation.status,
-                        message_count=conversation.message_count,
-                        last_message_at=conversation.last_message_at,
-                        created_at=conversation.created_at,
-                        updated_at=conversation.updated_at
-                    ))
+                # Get full conversation from cache if available (commented out for now)
+                # conversation = await self._get_cached_conversation(match['id'])
+                # if conversation and conversation.user_id == user_id:
+                #     results.append(ConversationSummary(
+                #         id=conversation.id,
+                #         user_id=conversation.user_id,
+                #         title=conversation.title,
+                #         summary=conversation.summary,
+                #         status=conversation.status,
+                #         message_count=conversation.message_count,
+                #         last_message_at=conversation.last_message_at,
+                #         created_at=conversation.created_at,
+                #         updated_at=conversation.updated_at
+                #     ))
+                pass  # TODO: Implement non-cache fallback
             
             # Refresh TTL
             await self.redis.expire(key, REDIS_TTL_SECONDS)

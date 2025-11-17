@@ -1,6 +1,6 @@
 """
 Database configuration and connection management for conversation storage
-Uses existing Redis and MySQL credentials from agent_dbs.py
+Supports both development (local) and production (AWS) environments
 """
 import redis
 from redis.asyncio import Redis
@@ -10,24 +10,54 @@ import aiomysql
 import asyncio
 from contextlib import asynccontextmanager
 import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+env_file = '.env.development' if os.getenv('ENVIRONMENT', 'development') == 'development' else '.env'
+if os.path.exists(env_file):
+    load_dotenv(env_file)
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Redis Configuration
-REDIS_HOST = "master.rediscluster.gywvad.use2.cache.amazonaws.com"
-REDIS_PORT = "6379"
-REDIS_PASSWORD = "RedisCluster2025"
+# Environment Detection
+IS_DEVELOPMENT = os.getenv('ENVIRONMENT', 'development') == 'development'
 
-# MySQL Configuration
-MYSQL_HOST = "aamsql-apm1009705-00dev01.c3q2fsxl5yla.us-east-2.rds.amazonaws.com"
-MYSQL_USER = "SRC_INTHELP_SLVR_WRITE"
-MYSQL_PASSWORD = "S7vcCw96uY$o0f%W"
-MYSQL_DATABASE = "aamsqlapm1009705dev"
+if IS_DEVELOPMENT:
+    # Local Development Configuration
+    REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+    REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+    REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', 'devpassword')
+    REDIS_SSL = os.getenv('REDIS_SSL', 'false').lower() == 'true'
+    
+    MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
+    MYSQL_PORT = int(os.getenv('MYSQL_PORT', '3306'))
+    MYSQL_USER = os.getenv('MYSQL_USER', 'pulse_user')
+    MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'pulse_password')
+    MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'conversation_dev')
+    MYSQL_SSL = None  # No SSL for local development
+    
+    logger.info("🔧 Using DEVELOPMENT configuration (local databases)")
+else:
+    # Production AWS Configuration
+    REDIS_HOST = "master.rediscluster.gywvad.use2.cache.amazonaws.com"
+    REDIS_PORT = 6379
+    REDIS_PASSWORD = "RedisCluster2025"
+    REDIS_SSL = True
+    
+    MYSQL_HOST = "aamsql-apm1009705-00dev01.c3q2fsxl5yla.us-east-2.rds.amazonaws.com"
+    MYSQL_PORT = 3306
+    MYSQL_USER = "SRC_INTHELP_SLVR_WRITE"
+    MYSQL_PASSWORD = "S7vcCw96uY$o0f%W"
+    MYSQL_DATABASE = "aamsqlapm1009705dev"
+    MYSQL_SSL = {"fake_flag_to_enable_tls": True}
+    
+    logger.info("🚀 Using PRODUCTION configuration (AWS databases)")
 
 # Connection Pool Configuration
-MYSQL_POOL_SIZE = 10
-REDIS_TTL_SECONDS = 900  # 15 minutes
+MYSQL_POOL_SIZE = int(os.getenv('MYSQL_POOL_SIZE', '5'))
+REDIS_TTL_SECONDS = int(os.getenv('REDIS_TTL_SECONDS', '900'))  # 15 minutes
 
 class DatabaseManager:
     """Manages database connections and connection pools"""
@@ -46,7 +76,7 @@ class DatabaseManager:
                 port=REDIS_PORT,
                 password=REDIS_PASSWORD,
                 decode_responses=True,
-                ssl=True
+                ssl=REDIS_SSL
             )
             
             # Test Redis connection
@@ -54,17 +84,23 @@ class DatabaseManager:
             logger.info("Redis async connection established successfully")
             
             # Initialize MySQL connection pool
-            self._mysql_pool = await aiomysql.create_pool(
-                host=MYSQL_HOST,
-                user=MYSQL_USER,
-                password=MYSQL_PASSWORD,
-                db=MYSQL_DATABASE,
-                minsize=5,
-                maxsize=MYSQL_POOL_SIZE,
-                cursorclass=aiomysql.DictCursor,
-                ssl={"fake_flag_to_enable_tls": True},
-                autocommit=True
-            )
+            mysql_config = {
+                'host': MYSQL_HOST,
+                'port': MYSQL_PORT,
+                'user': MYSQL_USER,
+                'password': MYSQL_PASSWORD,
+                'db': MYSQL_DATABASE,
+                'minsize': 2,
+                'maxsize': MYSQL_POOL_SIZE,
+                'cursorclass': aiomysql.DictCursor,
+                'autocommit': True
+            }
+            
+            # Add SSL only if not development
+            if not IS_DEVELOPMENT and MYSQL_SSL:
+                mysql_config['ssl'] = MYSQL_SSL
+            
+            self._mysql_pool = await aiomysql.create_pool(**mysql_config)
             logger.info("MySQL connection pool created successfully")
             
         except Exception as e:
@@ -108,7 +144,7 @@ def get_sync_redis_client():
             port=REDIS_PORT,
             password=REDIS_PASSWORD,
             decode_responses=True,
-            ssl=True
+            ssl=REDIS_SSL
         )
     except redis.exceptions.ConnectionError as e:
         logger.error(f"Sync Redis connection error: {e}")
@@ -118,14 +154,20 @@ def get_sync_redis_client():
 def get_sync_mysql_connection():
     """Get synchronous MySQL connection"""
     try:
-        return pymysql.connect(
-            host=MYSQL_HOST,
-            user=MYSQL_USER,
-            database=MYSQL_DATABASE,
-            password=MYSQL_PASSWORD,
-            ssl={"fake_flag_to_enable_tls": True},
-            cursorclass=DictCursor
-        )
+        mysql_config = {
+            'host': MYSQL_HOST,
+            'port': MYSQL_PORT,
+            'user': MYSQL_USER,
+            'database': MYSQL_DATABASE,
+            'password': MYSQL_PASSWORD,
+            'cursorclass': DictCursor
+        }
+        
+        # Add SSL only if not development
+        if not IS_DEVELOPMENT and MYSQL_SSL:
+            mysql_config['ssl'] = MYSQL_SSL
+            
+        return pymysql.connect(**mysql_config)
     except Exception as e:
         logger.error(f"MySQL connection error: {e}")
         raise

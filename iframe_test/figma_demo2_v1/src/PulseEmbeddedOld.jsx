@@ -485,14 +485,16 @@ const PulseEmbeddedOld = ({ userInfo }) => {
                 <button
                   key={`${currentQuestionSet}-${index}`}
                   onClick={() => handleSuggestionClick(question)}
-                  className="flex items-center px-2 md:px-4 py-3 cursor-pointer hover:opacity-80 transition-opacity relative group flex-1"
+                  className="flex items-center px-2 md:px-4 py-3 cursor-pointer hover:opacity-80 transition-opacity relative group"
                   title={question}
                   style={{
                     borderRadius: '100px',
                     border: '1px solid #44B8F3',
                     background: 'rgba(5, 15, 38, 0.40)',
                     minWidth: '0',
-                    maxWidth: 'calc((100vw - 200px) / 3)'
+                    maxWidth: '320px',
+                    width: 'calc((100% - 60px) / 3)',
+                    overflow: 'hidden'
                   }}
                 >
                   <div 

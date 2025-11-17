@@ -3,6 +3,7 @@ import logging
 import re
 from datetime import datetime, timedelta
 import time 
+import jsonify
 import http.client
 import ssl
 import os
@@ -1631,5 +1632,5 @@ async def user_to_agent(request: Request):
             "error": str(e)
         }
 
-if __name__ == "__main__":    
-   uvicorn.run("app:app", host="0.0.0.0", port=80, reload=True, log_config=None)
+#if __name__ == "__main__":    
+#    uvicorn.run("app:app", host="0.0.0.0", port=80, reload=True, log_config=None)

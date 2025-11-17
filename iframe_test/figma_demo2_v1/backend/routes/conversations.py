@@ -54,6 +54,10 @@ async def get_conversation(
     - **user_id**: ID of the user requesting the conversation
     """
     try:
+        # Handle local conversation IDs - return 404 for non-existent local conversations
+        if conversation_id.startswith('local_'):
+            raise HTTPException(status_code=404, detail="Local conversation not found in storage")
+            
         conversation = await conversation_service.get_conversation(conversation_id, user_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
@@ -136,11 +140,17 @@ async def get_user_conversations(
     - **offset**: Number of conversations to skip (for pagination)
     """
     try:
+        # Ensure conversation_service is available
+        if not hasattr(conversation_service, 'get_user_conversations'):
+            logger.error("Conversation service not properly initialized")
+            return []
+            
         conversations = await conversation_service.get_user_conversations(user_id, limit, offset)
-        return conversations
+        return conversations or []
     except Exception as e:
         logger.error(f"Failed to get conversations for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve conversations: {str(e)}")
+        # Return empty list instead of raising 500 error to prevent frontend crashes
+        return []
 
 # ================================================
 # MESSAGE ENDPOINTS
@@ -217,6 +227,11 @@ async def search_conversations(
     - **offset**: Number of results to skip (for pagination)
     """
     try:
+        # Ensure conversation_service is available
+        if not hasattr(conversation_service, 'search_conversations'):
+            logger.error("Conversation service search not properly initialized")
+            return SearchResponse(conversations=[], total=0, limit=limit, offset=offset)
+            
         search_request = SearchRequest(
             user_id=user_id,
             query=query,
@@ -228,7 +243,8 @@ async def search_conversations(
         return results
     except Exception as e:
         logger.error(f"Failed to search conversations: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        # Return empty results instead of raising 500 error to prevent frontend crashes
+        return SearchResponse(conversations=[], total=0, limit=limit, offset=offset)
 
 @router.get("/search/titles", response_model=List[ConversationSummary])
 async def search_conversation_titles(
@@ -324,10 +340,9 @@ async def health_check():
         )
 
 # ================================================
-# ERROR HANDLERS
+# ERROR HANDLERS (MOVED TO MAIN APP)
 # ================================================
-# Note: Exception handlers cannot be attached to APIRouter
-# They should be added to the FastAPI app instance in app.py if needed
+# Note: Exception handlers should be added to the main FastAPI app, not the router
 
 # @router.exception_handler(ValueError)
 # async def value_error_handler(request, exc):
