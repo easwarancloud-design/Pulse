@@ -1,0 +1,223 @@
+import React from 'react';
+
+const Header = () => {
+  return (
+    <div 
+      className="flex items-center justify-between w-full px-8 bg-white"
+      style={{
+        height: '80px',
+        boxShadow: '0 16px 25px 0 rgba(36, 107, 178, 0.05)'
+      }}
+    >
+      <div className="flex items-center gap-12">
+        <div className="flex items-center gap-6">
+          <svg width="88" height="23" viewBox="0 0 88 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8.06779 9.46461L10.8003 21.3303C10.8528 21.5541 10.911 21.62 10.9647 21.666C11.0594 21.7473 11.1884 21.7779 11.3227 21.7779C11.4472 21.784 11.534 21.7377 11.636 21.666C11.7379 21.5943 11.849 21.4495 11.8853 21.3303L15.7121 10.7412H23.4121C23.781 10.7412 24.018 10.6265 24.2789 10.3657C24.5397 10.1048 24.7264 9.72764 24.7264 9.35873C24.7264 8.98981 24.5397 8.61263 24.2789 8.35177C24.018 8.0909 23.781 7.95924 23.4121 7.95924H14.757C14.4873 7.95933 14.2251 8.04758 14.0102 8.21053C13.7954 8.37348 13.6397 8.6022 13.5669 8.86184L11.7648 15.2914L9.06262 2.08633C9.03931 1.96345 8.93299 1.83305 8.83885 1.75068C8.74472 1.66831 8.6281 1.64559 8.5032 1.6388C8.37863 1.63144 8.27051 1.68006 8.16755 1.75057C8.06458 1.82108 7.98196 1.96745 7.94378 2.08625L5.598 8.53418H1.391C1.02208 8.53418 0.668277 8.68074 0.407414 8.9416C0.146551 9.20246 0 9.55627 0 9.92518C0 10.2941 0.146551 10.6479 0.407414 10.9088C0.668277 11.1696 1.02208 11.3162 1.391 11.3162H6.47896C6.76814 11.3166 7.04991 11.2248 7.28337 11.0541C7.51683 10.8835 7.68982 10.6429 7.77723 10.3672L8.06779 9.46461Z" fill="#87D2F7"/>
+            <path d="M58.428 19.0425L58.8024 21.9626L58.6278 22.0208C58.1438 22.1821 57.5237 22.3142 57.022 22.3142C56.0327 22.3142 55.0543 21.9837 54.3236 21.2278C53.5923 20.4713 53.1329 19.3136 53.1329 17.7046V0H56.3372V17.7359C56.3372 18.3534 56.5057 18.738 56.7254 18.9673C56.9452 19.1967 57.2424 19.2978 57.5545 19.2978C57.7359 19.2978 57.9562 19.2447 58.1556 19.1592L58.428 19.0425Z" fill="#1A3673"/>
+            <path d="M41.0709 6.54746V15.073C41.0709 16.3462 41.442 17.3865 42.0727 18.1052C42.701 18.8212 43.6015 19.2351 44.7004 19.2351C45.8162 19.2351 46.7328 18.8203 47.3726 18.1038C48.0144 17.3849 48.3926 16.345 48.3926 15.073V6.54746H51.6283V15.2923C51.6283 17.3783 50.9455 19.1297 49.727 20.3604C48.5083 21.5913 46.772 22.2829 44.7004 22.2829C42.644 22.2829 40.9231 21.5909 39.7162 20.3596C38.5098 19.1287 37.8352 17.3775 37.8352 15.2923V6.54746H41.0709Z" fill="#1A3673"/>
+            <path d="M21.6836 11.7076V22.0005H24.9506V14.6698H28.8621C31.2348 14.6698 33.2238 14.0249 34.624 12.8682C36.0282 11.7082 36.8238 10.0464 36.8238 8.05524C36.8238 6.06479 36.0365 4.41063 34.6437 3.25811C33.255 2.10898 31.2815 1.47198 28.9247 1.47198H21.6836V6.78473H24.9506V4.45705H29.1754C30.4661 4.45705 31.5311 4.82136 32.2693 5.44577C33.0041 6.06722 33.4314 6.95921 33.4314 8.05524C33.4314 9.15155 33.0039 10.0518 32.2684 10.6812C31.5298 11.3133 30.4649 11.6848 29.1754 11.6848L25.0625 11.7076H21.6836Z" fill="#1A3673"/>
+            <path d="M70.0517 10.1616L70.2596 10.2778L71.5557 7.57458L71.3542 7.47767C69.7039 6.68425 68.0728 6.17111 65.9942 6.17111C62.2837 6.17111 60.1315 8.20265 60.1315 10.5928C60.1315 12.1069 60.6925 13.1271 61.5423 13.8447C62.3794 14.5514 63.484 14.9534 64.552 15.2714C64.8425 15.358 65.129 15.438 65.4077 15.5159L65.4083 15.5161L65.4086 15.5162C66.1732 15.7299 66.8792 15.9272 67.4495 16.1962C67.8335 16.3774 68.1339 16.5821 68.3378 16.8285C68.5374 17.0697 68.6526 17.3604 68.6526 17.7355C68.6526 18.2586 68.437 18.6902 67.9861 19C67.5246 19.317 66.8003 19.5167 65.7749 19.5167C64.1011 19.5167 62.6651 19.0315 60.9908 18.1634L60.7836 18.056L59.5343 20.7382L59.7087 20.8416C61.2792 21.771 63.3237 22.3765 65.587 22.3765C67.5331 22.3765 69.0971 21.89 70.1802 21.0531C71.2677 20.2128 71.857 19.028 71.857 17.6729C71.857 16.1816 71.2992 15.1769 70.4553 14.4694C69.6244 13.7729 68.5279 13.3749 67.4683 13.057C67.1935 12.9746 66.9224 12.8978 66.6582 12.8229L66.6579 12.8228C65.884 12.6035 65.1689 12.4008 64.5937 12.1232C64.213 11.9394 63.9147 11.7316 63.712 11.4817C63.5134 11.2367 63.3985 10.9415 63.3985 10.5615C63.3985 10.1036 63.6205 9.74157 64.0665 9.48229C64.5239 9.21638 65.2154 9.06229 66.1195 9.06229C67.5124 9.06229 69.0099 9.57945 70.0517 10.1616Z" fill="#1A3673"/>
+            <path fillRule="evenodd" clipRule="evenodd" d="M86.8791 19.9419L86.7502 20.0807C85.479 21.4497 83.2851 22.3765 80.822 22.3765C76.1193 22.3765 72.735 18.7309 72.735 14.2581C72.735 9.79532 75.9845 6.17111 80.3834 6.17111C84.7116 6.17111 88.0005 9.63024 88.0005 13.9762C88.0005 14.1695 87.9924 14.4098 87.9764 14.6307C87.9608 14.845 87.9363 15.0622 87.8979 15.1968L87.8515 15.3591H76.0706C76.4919 17.7276 78.3396 19.4541 80.916 19.4541C82.5504 19.4541 83.9966 18.8182 84.9556 17.8592L85.1357 17.6791L86.8791 19.9419ZM83.1469 10.0031C82.4236 9.34997 81.4914 8.99958 80.4147 8.99958C78.2826 8.99958 76.7049 10.4685 76.154 12.6247H84.587C84.3237 11.4915 83.8198 10.6109 83.1469 10.0031Z" fill="#1A3673"/>
+          </svg>
+        </div>
+
+        <div className="flex justify-center items-center gap-12">
+          <div className="flex items-center justify-center gap-2 py-6 cursor-pointer">
+            <div 
+              className="text-center"
+              style={{
+                color: '#1A3673',
+                fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                fontSize: '18px',
+                fontWeight: '500',
+                lineHeight: '150%'
+              }}
+            >
+              Our Company
+            </div>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 6L8 10L12 6" stroke="#1A3673" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="flex items-center justify-center gap-2 py-6 cursor-pointer">
+            <div 
+              className="text-center"
+              style={{
+                color: '#1A3673',
+                fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                fontSize: '18px',
+                fontWeight: '500',
+                lineHeight: '150%'
+              }}
+            >
+              Our Focus
+            </div>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 6L8 10L12 6" stroke="#1A3673" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="flex items-center justify-center gap-2 py-6 cursor-pointer">
+            <div 
+              className="text-center"
+              style={{
+                color: '#1A3673',
+                fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                fontSize: '18px',
+                fontWeight: '500',
+                lineHeight: '150%'
+              }}
+            >
+              Our Initiatives
+            </div>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 6L8 10L12 6" stroke="#1A3673" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div className="flex items-center justify-center gap-2 py-6 cursor-pointer">
+            <div 
+              className="text-center"
+              style={{
+                color: '#1A3673',
+                fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                fontSize: '18px',
+                fontWeight: '500',
+                lineHeight: '150%'
+              }}
+            >
+              Our Resources
+            </div>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 6L8 10L12 6" stroke="#1A3673" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-5">
+        <div 
+          className="flex items-center justify-center cursor-pointer"
+          style={{
+            width: '36px',
+            height: '36px',
+            padding: '4px 8px',
+            borderRadius: '100px',
+            background: '#E1EDFF',
+            position: 'relative'
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8.5 2.79883C9.74325 5.25706 11.7421 7.25659 14.2002 8.5C11.7423 9.74328 9.74328 11.7423 8.5 14.2002C7.25659 11.7421 5.25706 9.74325 2.79883 8.5C5.25732 7.25662 7.25662 5.25732 8.5 2.79883Z" fill="#2861BB" stroke="#E1EDFF" strokeWidth="2"/>
+          </svg>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g clipPath="url(#clip0_stock)">
+              <path d="M16 6L18.29 8.29L13.41 13.17L9.41 9.17L2 16.59L3.41 18L9.41 12L13.41 16L19.71 9.71L22 12V6H16Z" fill="#5AB2C7"/>
+            </g>
+            <defs>
+              <clipPath id="clip0_stock">
+                <rect width="24" height="24" fill="white"/>
+              </clipPath>
+            </defs>
+          </svg>
+          <div 
+            className="text-center cursor-pointer"
+            style={{
+              color: '#1A3673',
+              fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+              fontSize: '18px',
+              fontWeight: '500',
+              lineHeight: '24px'
+            }}
+          >
+            ELV 467.86 
+          </div>
+        </div>
+
+        <div 
+          className="text-center"
+          style={{
+            color: '#5AB2C7',
+            fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+            fontSize: '18px',
+            fontWeight: '500',
+            lineHeight: '24px'
+          }}
+        >
+          3.23
+        </div>
+
+        <div 
+          className="cursor-pointer"
+          style={{
+            color: '#1A3673',
+            fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+            fontSize: '18px',
+            fontWeight: '500',
+            lineHeight: '24px'
+          }}
+        >
+          My HR
+        </div>
+
+        <div 
+          className="cursor-pointer"
+          style={{
+            color: '#1A3673',
+            fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+            fontSize: '18px',
+            fontWeight: '500',
+            lineHeight: '24px'
+          }}
+        >
+          Español
+        </div>
+
+        <div className="flex items-center gap-2.5 relative">
+          <div className="relative cursor-pointer">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M11.5012 23C12.5889 23 13.4787 22.0769 13.4787 20.9487H9.5237C9.5237 22.0769 10.4037 23 11.5012 23ZM17.4338 16.8462V11.7179C17.4338 8.56923 15.8122 5.93333 12.9844 5.2359V4.53846C12.9844 3.68718 12.3219 3 11.5012 3C10.6805 3 10.0181 3.68718 10.0181 4.53846V5.2359C7.18033 5.93333 5.56865 8.55897 5.56865 11.7179V16.8462L4.29315 18.1692C3.67023 18.8154 4.10528 19.9231 4.98528 19.9231H18.0073C18.8873 19.9231 19.3322 18.8154 18.7093 18.1692L17.4338 16.8462Z" fill="#2861BB"/>
+            </svg>
+            <div 
+              className="absolute flex items-center justify-center"
+              style={{
+                width: '16px',
+                height: '16px',
+                borderRadius: '999px',
+                background: '#E3725F',
+                top: '-8px',
+                right: '-8px'
+              }}
+            >
+              <div 
+                className="text-white text-center"
+                style={{
+                  fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  lineHeight: '150%'
+                }}
+              >
+                3
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <img 
+          className="cursor-pointer"
+          style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '50%'
+          }}
+          src="https://api.builder.io/api/v1/image/assets/TEMP/d50faf50ea7b95a4ce18bf943eb880a5681c5214?width=72" 
+          alt="User profile" 
+        />
+      </div>
+    </div>
+  );
+};
+
+export default Header;
