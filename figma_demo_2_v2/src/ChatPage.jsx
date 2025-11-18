@@ -6,6 +6,7 @@ import ButtonRow from './components/ButtonRow';
 import { uuidv4, cleanStreamText } from './utils/workforceAgentUtils';
 import { API_ENDPOINTS } from './config/api';
 import { hybridChatService } from './services/hybridChatService';
+import { conversationStorage } from './services/conversationStorageService';
 
 // Text formatting utilities
 const formatTextWithLinks = (text) => {
@@ -1160,9 +1161,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
     // Store feedback in backend
     try {
-      if (conversationStorageService) {
-        await conversationStorageService.updateMessageFeedback(
-          currentThreadId,
+      if (conversationStorage) {
+        await conversationStorage.updateMessageFeedback(
+          hybridChatService.getCurrentConversationId(),
           messageId,
           { liked: newLikedValue }
         );
@@ -1206,9 +1207,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
     // Store feedback in backend
     try {
-      if (conversationStorageService) {
-        await conversationStorageService.updateMessageFeedback(
-          currentThreadId,
+      if (conversationStorage) {
+        await conversationStorage.updateMessageFeedback(
+          hybridChatService.getCurrentConversationId(),
           messageId,
           { liked: newLikedValue }
         );
