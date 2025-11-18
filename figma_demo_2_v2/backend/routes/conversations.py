@@ -74,20 +74,19 @@ async def health_check(
 
 @router.post("/conversations", response_model=ConversationResponse)
 async def create_conversation(
-    conversation_data: ConversationCreate,
-    user_id: str = Query(..., description="User ID")
+    conversation_data: ConversationCreate
 ):
     """
     Create a new conversation
     Full path: /api/conversations
     
-    - **user_id**: ID of the user creating the conversation  
+    - **user_id**: ID of the user creating the conversation (in request body)
     - **title**: Title of the conversation
     - **summary**: Optional summary of the conversation
     - **metadata**: Optional additional metadata
     """
     try:
-        conversation = await conversation_service.create_conversation(conversation_data, user_id)
+        conversation = await conversation_service.create_conversation(conversation_data)
         return conversation
     except Exception as e:
         logger.error(f"Failed to create conversation: {e}")
