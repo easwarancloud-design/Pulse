@@ -18,31 +18,82 @@ from services.conversation_service import conversation_service
 
 logger = logging.getLogger(__name__)
 
-# Create router for conversation endpoints
-router = APIRouter(prefix="/api/conversations", tags=["conversations"])
+# Create router for conversation endpoints  
+router = APIRouter(prefix="/api", tags=["conversations"])
+
+# ================================================
+# HEALTH CHECK ENDPOINT (must be before parameterized routes)
+# ================================================
+
+@router.get("/conversations/health")
+async def health_check(
+    user_id: Optional[str] = Query(None, description="Optional user ID for testing")
+):
+    """
+    Health check endpoint for conversation service
+    Note: user_id is optional for health checks
+    Full path: /api/conversations/health
+    """
+    try:
+        # Test Redis connection
+        await conversation_service.redis.ping()
+        
+        # Test MySQL connection
+        async with conversation_service.mysql() as (cursor, conn):
+            await cursor.execute("SELECT 1")
+            await cursor.fetchone()
+        
+        return APIResponse(
+            success=True,
+            message="Conversation service is healthy",
+            data={
+                "redis": "connected",
+                "mysql": "connected",
+                "service": "running"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content=ErrorResponse(
+                success=False,
+                message="Service unavailable",
+                error=str(e),
+                details={
+                    "redis": "disconnected" if "redis" in str(e).lower() else "unknown",
+                    "mysql": "disconnected" if "mysql" in str(e).lower() else "unknown",
+                    "service": "unhealthy"
+                }
+            ).dict()
+        )
 
 # ================================================
 # CONVERSATION ENDPOINTS
 # ================================================
 
-@router.post("/", response_model=ConversationResponse)
-async def create_conversation(conversation_data: ConversationCreate):
+@router.post("/conversations", response_model=ConversationResponse)
+async def create_conversation(
+    conversation_data: ConversationCreate,
+    user_id: str = Query(..., description="User ID")
+):
     """
     Create a new conversation
+    Full path: /api/conversations
     
-    - **user_id**: ID of the user creating the conversation
+    - **user_id**: ID of the user creating the conversation  
     - **title**: Title of the conversation
     - **summary**: Optional summary of the conversation
     - **metadata**: Optional additional metadata
     """
     try:
-        conversation = await conversation_service.create_conversation(conversation_data)
+        conversation = await conversation_service.create_conversation(conversation_data, user_id)
         return conversation
     except Exception as e:
         logger.error(f"Failed to create conversation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create conversation: {str(e)}")
 
-@router.get("/{conversation_id}", response_model=ConversationResponse)
+@router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
     conversation_id: str = Path(..., description="Conversation ID"),
     user_id: str = Query(..., description="User ID")
@@ -68,7 +119,7 @@ async def get_conversation(
         logger.error(f"Failed to get conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve conversation: {str(e)}")
 
-@router.put("/{conversation_id}", response_model=ConversationResponse)
+@router.put("/conversations/{conversation_id}", response_model=ConversationResponse)
 async def update_conversation(
     conversation_id: str = Path(..., description="Conversation ID"),
     update_data: ConversationUpdate = ...,
@@ -95,7 +146,7 @@ async def update_conversation(
         logger.error(f"Failed to update conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
 
-@router.delete("/{conversation_id}")
+@router.delete("/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: str = Path(..., description="Conversation ID"),
     user_id: str = Query(..., description="User ID")
@@ -126,7 +177,7 @@ async def delete_conversation(
 # USER CONVERSATIONS
 # ================================================
 
-@router.get("/user/{user_id}", response_model=List[ConversationSummary])
+@router.get("/conversations/user/{user_id}", response_model=List[ConversationSummary])
 async def get_user_conversations(
     user_id: str = Path(..., description="User ID"),
     limit: int = Query(20, ge=1, le=100, description="Number of conversations to return"),
@@ -156,7 +207,7 @@ async def get_user_conversations(
 # MESSAGE ENDPOINTS
 # ================================================
 
-@router.post("/{conversation_id}/messages", response_model=MessageResponse)
+@router.post("/conversations/{conversation_id}/messages", response_model=MessageResponse)
 async def add_message(
     conversation_id: str = Path(..., description="Conversation ID"),
     message_data: MessageCreate = ...,
@@ -184,7 +235,7 @@ async def add_message(
         logger.error(f"Failed to add message to conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add message: {str(e)}")
 
-@router.post("/{conversation_id}/messages/bulk", response_model=BulkMessageResponse)
+@router.post("/conversations/{conversation_id}/messages/bulk", response_model=BulkMessageResponse)
 async def bulk_add_messages(
     conversation_id: str = Path(..., description="Conversation ID"),
     bulk_data: BulkMessageCreate = ...,
@@ -207,7 +258,7 @@ async def bulk_add_messages(
         logger.error(f"Failed to bulk add messages to conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add messages: {str(e)}")
 
-@router.put("/{conversation_id}/messages/{message_id}/feedback")
+@router.put("/conversations/{conversation_id}/messages/{message_id}/feedback")
 async def update_message_feedback(
     conversation_id: str = Path(..., description="Conversation ID"),
     message_id: str = Path(..., description="Message ID"),
@@ -251,7 +302,7 @@ async def update_message_feedback(
 # SEARCH ENDPOINTS
 # ================================================
 
-@router.get("/search/", response_model=SearchResponse)
+@router.get("/conversations/search/", response_model=SearchResponse)
 async def search_conversations(
     user_id: str = Query(..., description="User ID"),
     query: str = Query(..., description="Search query"),
@@ -286,7 +337,7 @@ async def search_conversations(
         # Return empty results instead of raising 500 error to prevent frontend crashes
         return SearchResponse(conversations=[], total=0, limit=limit, offset=offset)
 
-@router.get("/search/titles", response_model=List[ConversationSummary])
+@router.get("/conversations/search/titles", response_model=List[ConversationSummary])
 async def search_conversation_titles(
     user_id: str = Query(..., description="User ID"),
     query: str = Query(..., description="Search query"),
@@ -317,7 +368,7 @@ async def search_conversation_titles(
 # USER SESSION ENDPOINTS
 # ================================================
 
-@router.put("/session/{user_id}", response_model=UserSession)
+@router.put("/conversations/session/{user_id}", response_model=UserSession)
 async def update_user_session(
     user_id: str = Path(..., description="User ID"),
     session_data: UserSessionUpdate = ...
@@ -335,49 +386,6 @@ async def update_user_session(
     except Exception as e:
         logger.error(f"Failed to update user session for {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
-
-# ================================================
-# HEALTH CHECK ENDPOINTS
-# ================================================
-
-@router.get("/health")
-async def health_check():
-    """
-    Health check endpoint for conversation service
-    """
-    try:
-        # Test Redis connection
-        await conversation_service.redis.ping()
-        
-        # Test MySQL connection
-        async with conversation_service.mysql() as (cursor, conn):
-            await cursor.execute("SELECT 1")
-            await cursor.fetchone()
-        
-        return APIResponse(
-            success=True,
-            message="Conversation service is healthy",
-            data={
-                "redis": "connected",
-                "mysql": "connected",
-                "service": "running"
-            }
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return JSONResponse(
-            status_code=503,
-            content=ErrorResponse(
-                success=False,
-                message="Service unavailable",
-                error=str(e),
-                details={
-                    "redis": "disconnected" if "redis" in str(e).lower() else "unknown",
-                    "mysql": "disconnected" if "mysql" in str(e).lower() else "unknown",
-                    "service": "unhealthy"
-                }
-            ).dict()
-        )
 
 # ================================================
 # ERROR HANDLERS (MOVED TO MAIN APP)
@@ -413,7 +421,7 @@ async def health_check():
 # UTILITY ENDPOINTS FOR DEVELOPMENT
 # ================================================
 
-@router.get("/debug/cache/{conversation_id}")
+@router.get("/conversations/debug/cache/{conversation_id}")
 async def debug_cache_status(
     conversation_id: str = Path(..., description="Conversation ID")
 ):
