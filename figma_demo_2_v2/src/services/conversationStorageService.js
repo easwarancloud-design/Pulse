@@ -150,14 +150,12 @@ export class ConversationStorageService {
       });
       
       const messageData = {
-        conversation_id: conversationId,
         message_type: messageType, // 'user' or 'assistant'
         content: content,
         metadata: {
           timestamp: new Date().toISOString(),
           ...metadata
         },
-        token_count: this.estimateTokenCount(content),
         reference_links: referenceLinks
       };
 
@@ -205,7 +203,6 @@ export class ConversationStorageService {
             timestamp: new Date().toISOString(),
             ...msg.metadata
           },
-          token_count: this.estimateTokenCount(msg.content),
           reference_links: msg.referenceLinks || []
         }))
       };
@@ -395,7 +392,7 @@ export class ConversationStorageService {
       
       const response = await fetch(url, {
         method: 'PUT',
-        headers: API_HEADERS,
+        headers: API_HEADERS.JSON,
         body: JSON.stringify(feedbackData)
       });
 
