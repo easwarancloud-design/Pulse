@@ -62,10 +62,9 @@ class ConversationService:
             message_type=MessageType(db_row['message_type']),
             content=db_row['message_text'],    # message_text -> content
             metadata=json.loads(db_row.get('metadata', '{}')) if isinstance(db_row.get('metadata'), str) else (db_row.get('metadata') or {}),
-            token_count=0,  # Remove token_count as requested
             created_at=db_row['created_at'],
             updated_at=db_row.get('updated_at', db_row['created_at']),
-            # Keep feedback fields
+            # Feedback fields
             liked=db_row.get('liked', 0),
             feedback_text=db_row.get('feedback_text'),
             feedback_at=db_row.get('feedback_at')
@@ -77,6 +76,7 @@ class ConversationService:
             'conversation_id': conversation.id,
             'domain_id': conversation.user_id,  # user_id -> domain_id
             'title': conversation.title,
+            'summary': conversation.summary,  # Add missing summary field
             'metadata': json.dumps(conversation.metadata) if conversation.metadata else None,
             'message_count': conversation.message_count,
             'is_archived': conversation.status == ConversationStatus.ARCHIVED,
@@ -127,12 +127,12 @@ class ConversationService:
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
                     INSERT INTO wl_conversations 
-                    (conversation_id, domain_id, title, metadata, message_count, is_archived, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    (conversation_id, domain_id, title, summary, metadata, message_count, is_archived, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     db_data['conversation_id'], db_data['domain_id'], db_data['title'],
-                    db_data['metadata'], db_data['message_count'], db_data['is_archived'],
-                    db_data['created_at'], db_data['updated_at']
+                    db_data['summary'], db_data['metadata'], db_data['message_count'], 
+                    db_data['is_archived'], db_data['created_at'], db_data['updated_at']
                 ))
                 await conn.commit()
             
@@ -288,7 +288,6 @@ class ConversationService:
                 message_type=message_data.message_type,
                 content=message_data.content,
                 metadata=message_data.metadata or {},
-                token_count=0,  # Remove token_count as requested
                 created_at=now,
                 updated_at=now
             )

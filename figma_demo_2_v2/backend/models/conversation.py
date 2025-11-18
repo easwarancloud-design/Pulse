@@ -70,7 +70,10 @@ class Message(TimestampMixin):
     content: str = Field(..., description="Message content")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional message metadata")
     reference_links: Optional[List[ReferenceLink]] = Field(default_factory=list)
-    token_count: Optional[int] = Field(None, description="Token count for the message")
+    # Feedback fields
+    liked: Optional[int] = Field(0, description="Feedback: -1=dislike, 0=neutral, 1=like")
+    feedback_text: Optional[str] = Field(None, description="User feedback text")
+    feedback_at: Optional[datetime] = Field(None, description="When feedback was given")
     
     @validator('content')
     def content_must_not_be_empty(cls, v):
