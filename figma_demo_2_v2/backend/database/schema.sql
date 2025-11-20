@@ -13,18 +13,18 @@
 
 -- Drop tables if they exist (for clean setup)
 -- Remove these DROP statements in production
--- DROP TABLE IF EXISTS reference_links;
--- DROP TABLE IF EXISTS messages;
--- DROP TABLE IF EXISTS conversations;
--- DROP TABLE IF EXISTS user_sessions;
+-- DROP TABLE IF EXISTS wl_reference_links;
+-- DROP TABLE IF EXISTS wl_messages;
+-- DROP TABLE IF EXISTS wl_conversations;
+-- DROP TABLE IF EXISTS wl_user_sessions;
 
 -- ================================================
--- 1. CONVERSATIONS TABLE
+-- 1. WL_CONVERSATIONS TABLE
 -- ================================================
 -- Stores conversation metadata and summary information
-CREATE TABLE conversations (
+CREATE TABLE wl_conversations (
     id VARCHAR(50) PRIMARY KEY,
-    user_id VARCHAR(100) NOT NULL,
+    domain_id VARCHAR(100) NOT NULL,
     title VARCHAR(500) NOT NULL,
     summary TEXT,
     status ENUM('active', 'archived', 'deleted') DEFAULT 'active',
@@ -36,49 +36,56 @@ CREATE TABLE conversations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     -- Indexes for performance
-    INDEX idx_user_id (user_id),
+    INDEX idx_domain_id (domain_id),
     INDEX idx_status (status),
     INDEX idx_last_message_at (last_message_at),
     INDEX idx_created_at (created_at),
-    INDEX idx_user_status (user_id, status),
-    INDEX idx_user_created (user_id, created_at),
+    INDEX idx_domain_status (domain_id, status),
+    INDEX idx_domain_created (domain_id, created_at),
     
     -- Full-text search index for title and summary
     FULLTEXT INDEX ft_title_summary (title, summary)
 );
 
 -- ================================================
--- 2. MESSAGES TABLE
+-- 2. WL_MESSAGES TABLE
 -- ================================================
 -- Stores individual messages within conversations
-CREATE TABLE messages (
+CREATE TABLE wl_messages (
     id VARCHAR(50) PRIMARY KEY,
     conversation_id VARCHAR(50) NOT NULL,
+    chat_id VARCHAR(100) DEFAULT NULL COMMENT 'Frontend chat bubble ID for feedback mapping',
     message_type ENUM('user', 'assistant', 'system') NOT NULL,
     content TEXT NOT NULL,
     metadata JSON,
     token_count INT,
+    -- Feedback fields for like/dislike functionality
+    liked TINYINT DEFAULT 0 COMMENT '-1=dislike, 0=neutral, 1=like',
+    feedback_text TEXT DEFAULT NULL COMMENT 'User feedback text',
+    feedback_at TIMESTAMP NULL DEFAULT NULL COMMENT 'When feedback was given',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     -- Foreign key constraint
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES wl_conversations(id) ON DELETE CASCADE,
     
     -- Indexes for performance
     INDEX idx_conversation_id (conversation_id),
+    INDEX idx_chat_id (chat_id),
     INDEX idx_message_type (message_type),
     INDEX idx_created_at (created_at),
     INDEX idx_conversation_created (conversation_id, created_at),
+    INDEX idx_feedback_liked (liked),
     
     -- Full-text search index for message content
     FULLTEXT INDEX ft_content (content)
 );
 
 -- ================================================
--- 3. REFERENCE_LINKS TABLE
+-- 3. WL_REFERENCE_LINKS TABLE
 -- ================================================
 -- Stores reference links found in messages
-CREATE TABLE reference_links (
+CREATE TABLE wl_reference_links (
     id VARCHAR(50) PRIMARY KEY,
     message_id VARCHAR(50) NOT NULL,
     url TEXT NOT NULL,
@@ -88,7 +95,7 @@ CREATE TABLE reference_links (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     -- Foreign key constraint
-    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+    FOREIGN KEY (message_id) REFERENCES wl_messages(id) ON DELETE CASCADE,
     
     -- Indexes for performance
     INDEX idx_message_id (message_id),
@@ -100,11 +107,11 @@ CREATE TABLE reference_links (
 );
 
 -- ================================================
--- 4. USER_SESSIONS TABLE
+-- 4. WL_USER_SESSIONS TABLE
 -- ================================================
 -- Tracks user session data and activity
-CREATE TABLE user_sessions (
-    user_id VARCHAR(100) PRIMARY KEY,
+CREATE TABLE wl_user_sessions (
+    domain_id VARCHAR(100) PRIMARY KEY,
     session_id VARCHAR(100),
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     active_conversation_id VARCHAR(50),
@@ -113,7 +120,7 @@ CREATE TABLE user_sessions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     -- Foreign key constraint (optional - conversation might be deleted)
-    FOREIGN KEY (active_conversation_id) REFERENCES conversations(id) ON DELETE SET NULL,
+    FOREIGN KEY (active_conversation_id) REFERENCES wl_conversations(id) ON DELETE SET NULL,
     
     -- Indexes for performance
     INDEX idx_session_id (session_id),
@@ -139,11 +146,11 @@ BEGIN
         COALESCE(SUM(token_count), 0),
         MAX(created_at)
     INTO msg_count, total_tokens_sum, last_msg_time
-    FROM messages 
+    FROM wl_messages 
     WHERE conversation_id = conv_id;
     
     -- Update conversation record
-    UPDATE conversations 
+    UPDATE wl_conversations 
     SET 
         message_count = msg_count,
         total_tokens = total_tokens_sum,
@@ -157,7 +164,7 @@ DELIMITER ;
 DELIMITER //
 CREATE PROCEDURE CleanupOldSessions(IN days_old INT)
 BEGIN
-    DELETE FROM user_sessions 
+    DELETE FROM wl_user_sessions 
     WHERE last_activity < DATE_SUB(NOW(), INTERVAL days_old DAY);
 END //
 DELIMITER ;
@@ -170,7 +177,7 @@ READS SQL DATA
 DETERMINISTIC
 BEGIN
     DECLARE msg_count INT DEFAULT 0;
-    SELECT COUNT(*) INTO msg_count FROM messages WHERE conversation_id = conv_id;
+    SELECT COUNT(*) INTO msg_count FROM wl_messages WHERE conversation_id = conv_id;
     RETURN msg_count;
 END //
 DELIMITER ;
@@ -182,7 +189,7 @@ DELIMITER ;
 -- Trigger to automatically update conversation stats when message is inserted
 DELIMITER //
 CREATE TRIGGER after_message_insert
-    AFTER INSERT ON messages
+    AFTER INSERT ON wl_messages
     FOR EACH ROW
 BEGIN
     CALL UpdateConversationStats(NEW.conversation_id);
@@ -192,7 +199,7 @@ DELIMITER ;
 -- Trigger to automatically update conversation stats when message is deleted
 DELIMITER //
 CREATE TRIGGER after_message_delete
-    AFTER DELETE ON messages
+    AFTER DELETE ON wl_messages
     FOR EACH ROW
 BEGIN
     CALL UpdateConversationStats(OLD.conversation_id);
@@ -202,14 +209,14 @@ DELIMITER ;
 -- Trigger to update user session activity
 DELIMITER //
 CREATE TRIGGER after_message_insert_session
-    AFTER INSERT ON messages
+    AFTER INSERT ON wl_messages
     FOR EACH ROW
 BEGIN
     -- Update user session last activity when they send a message
     IF NEW.message_type = 'user' THEN
-        INSERT INTO user_sessions (user_id, last_activity, active_conversation_id)
-        SELECT c.user_id, NOW(), NEW.conversation_id
-        FROM conversations c
+        INSERT INTO wl_user_sessions (domain_id, last_activity, active_conversation_id)
+        SELECT c.domain_id, NOW(), NEW.conversation_id
+        FROM wl_conversations c
         WHERE c.id = NEW.conversation_id
         ON DUPLICATE KEY UPDATE 
             last_activity = NOW(),
@@ -225,18 +232,18 @@ DELIMITER ;
 -- ================================================
 
 -- Create indexes for better performance (if not created above)
--- ALTER TABLE conversations ADD INDEX idx_user_title (user_id, title(100));
--- ALTER TABLE messages ADD INDEX idx_conv_type_created (conversation_id, message_type, created_at);
+-- ALTER TABLE wl_conversations ADD INDEX idx_user_title (user_id, title(100));
+-- ALTER TABLE wl_messages ADD INDEX idx_conv_type_created (conversation_id, message_type, created_at);
 
 -- ================================================
--- VIEWS FOR COMMON QUERIES
+-- VIEWS FOR COMMON QUERIES (REMOVED UNUSED VIEWS)
 -- ================================================
 
 -- View for conversation summaries with latest message info
 CREATE VIEW conversation_summaries AS
 SELECT 
     c.id,
-    c.user_id,
+    c.domain_id,
     c.title,
     c.summary,
     c.status,
@@ -247,22 +254,11 @@ SELECT
     c.updated_at,
     m.content as latest_message_content,
     m.message_type as latest_message_type
-FROM conversations c
-LEFT JOIN messages m ON c.id = m.conversation_id 
+FROM wl_conversations c
+LEFT JOIN wl_messages m ON c.id = m.conversation_id 
     AND m.created_at = c.last_message_at
 WHERE c.status != 'deleted'
 ORDER BY c.last_message_at DESC;
-
--- View for active conversations with recent activity
-CREATE VIEW recent_conversations AS
-SELECT 
-    c.*,
-    us.last_activity as user_last_activity
-FROM conversations c
-LEFT JOIN user_sessions us ON c.user_id = us.user_id
-WHERE c.status = 'active'
-    AND c.last_message_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-ORDER BY COALESCE(c.last_message_at, c.created_at) DESC;
 
 -- ================================================
 -- PERFORMANCE OPTIMIZATION HINTS
@@ -278,27 +274,38 @@ ORDER BY COALESCE(c.last_message_at, c.created_at) DESC;
 -- ================================================
 /*
 -- Insert a new conversation
-INSERT INTO conversations (id, user_id, title) 
-VALUES ('conv_123', 'user_456', 'My First Conversation');
+INSERT INTO wl_conversations (id, domain_id, title) 
+VALUES ('conv_123', 'AG04333', 'My First Conversation');
 
--- Insert a message
-INSERT INTO messages (id, conversation_id, message_type, content, token_count) 
-VALUES ('msg_789', 'conv_123', 'user', 'Hello, how can you help me?', 25);
+-- Insert messages with chat_id for frontend mapping
+INSERT INTO wl_messages (id, conversation_id, chat_id, message_type, content, token_count) 
+VALUES 
+  ('msg_789', 'conv_123', 'user-1', 'user', 'Hello, how can you help me?', 25),
+  ('msg_790', 'conv_123', 'bot-1', 'assistant', 'I can help you with various tasks!', 30);
+
+-- Update feedback for a specific response using chat_id
+UPDATE wl_messages 
+SET liked = 1, feedback_text = 'Very helpful response', feedback_at = NOW()
+WHERE chat_id = 'bot-1' AND conversation_id = 'conv_123';
 
 -- Search conversations by title
-SELECT * FROM conversations 
-WHERE user_id = 'user_456' 
+SELECT * FROM wl_conversations 
+WHERE domain_id = 'AG04333' 
     AND MATCH(title, summary) AGAINST('help support' IN NATURAL LANGUAGE MODE);
 
--- Get conversation with all messages
+-- Get conversation with all messages including chat_ids and feedback
 SELECT 
     c.*, 
     m.id as message_id, 
+    m.chat_id,
     m.message_type, 
     m.content, 
+    m.liked,
+    m.feedback_text,
+    m.feedback_at,
     m.created_at as message_created_at
-FROM conversations c
-LEFT JOIN messages m ON c.id = m.conversation_id
+FROM wl_conversations c
+LEFT JOIN wl_messages m ON c.id = m.conversation_id
 WHERE c.id = 'conv_123'
 ORDER BY m.created_at;
 */

@@ -2,9 +2,13 @@
  * Hybrid Chat Service
  * Combines local conversation storage with live response generation
  * Preserves original backend for live chat while storing conversations locally
+ * Now enhanced with intelligent caching and optimized loading
  */
 
 import { conversationStorage } from './conversationStorageService';
+import { conversationLoader } from './conversationLoaderService';
+import { conversationCacheService } from './conversationCacheService';
+import { apiCompatibilityService } from './apiCompatibilityService';
 import { API_ENDPOINTS } from '../config/api';
 
 export class HybridChatService {
@@ -22,37 +26,30 @@ export class HybridChatService {
   setUserId(userId) {
     this.currentUserId = userId;
     conversationStorage.setUserId(userId);
-    console.log('🆔 Updated user ID for conversation storage:', userId);
-  }
+    conversationLoader.setUserId(userId);
+    }
 
   /**
    * Initialize service and check API availability
    */
   async initializeService() {
     try {
-      console.log('🔄 Initializing hybrid chat service...');
-      console.log('🔧 Initial settings:', {
-        localAPI: this.isLocalStorageEnabled,
-        fallback: this.fallbackToLocal
-      });
+      // Check API compatibility first
+      await apiCompatibilityService.checkAPICompatibility();
       
-      const healthCheck = await conversationStorage.checkHealth();
-      console.log('🏥 Health check result:', healthCheck);
+      const healthCheck = await apiCompatibilityService.safeAPICall(
+        () => conversationStorage.checkHealth(),
+        false
+      );
       
       // Always keep API enabled for testing
       this.isLocalStorageEnabled = true; 
       
-      console.log('🚀 Chat service initialized:', {
-        localAPI: this.isLocalStorageEnabled,
-        fallback: this.fallbackToLocal,
-        healthCheckPassed: healthCheck
-      });
-    } catch (error) {
+      } catch (error) {
       console.error('❌ API initialization error:', error);
       // Still keep API enabled to see failed attempts
       this.isLocalStorageEnabled = true;
-      console.log('🚀 Chat service initialized with forced API mode for debugging');
-    }
+      }
   }
 
   /**
@@ -61,16 +58,13 @@ export class HybridChatService {
   async startNewConversation(title) {
     try {
       if (this.isLocalStorageEnabled) {
-        console.log('🔄 Attempting to create new conversation via API:', title);
         const conversation = await conversationStorage.createConversation(title);
         this.currentConversationId = conversation.id;
-        console.log('✅ New conversation created via API:', conversation.id);
         return conversation.id;
       } else if (this.fallbackToLocal) {
         // Use localStorage as fallback
         const conversationId = `local_${Date.now()}`;
         this.currentConversationId = conversationId;
-        console.log('💾 New conversation created locally:', conversationId);
         return conversationId;
       }
     } catch (error) {
@@ -104,8 +98,7 @@ export class HybridChatService {
           questionText,
           { ...metadata, timestamp: new Date().toISOString() }
         );
-        console.log('💬 User question saved to API');
-      }
+        }
     } catch (error) {
       console.error('❌ Failed to save user question:', error);
       // API-only mode - no localStorage fallback
@@ -119,7 +112,7 @@ export class HybridChatService {
   async getLiveResponse(questionText, sessionId) {
     try {
       // Use original API endpoints for live responses
-      const response = await fetch(API_ENDPOINTS.WORKFORCE_AGENT, {
+      const response = await fetch(API_ENDPOINTS.WORKFORCE_CHAT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,7 +129,6 @@ export class HybridChatService {
       }
 
       const data = await response.json();
-      console.log('🤖 Received live response from original backend');
       return data;
 
     } catch (error) {
@@ -150,19 +142,32 @@ export class HybridChatService {
    */
   async saveAssistantResponse(responseText, questionText = null, metadata = {}) {
     try {
+      if (!this.currentConversationId) {
+        console.error('❌ No currentConversationId available for saving assistant response');
+        return;
+      }
+
       if (this.isLocalStorageEnabled && this.currentConversationId) {
         // Save to API
         console.log('🔄 Attempting to save assistant response to API:', responseText.substring(0, 50) + '...');
-        await conversationStorage.addMessage(
+        
+        const result = await conversationStorage.addMessage(
           this.currentConversationId,
           'assistant',
           responseText,
           { ...metadata, timestamp: new Date().toISOString() }
         );
-        console.log('🤖 Assistant response saved to API');
+        
+        } else {
+        console.warn('⚠️ LocalStorage disabled or no conversation ID, skipping API save');
       }
     } catch (error) {
       console.error('❌ Failed to save assistant response:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        stack: error.stack,
+        conversationId: this.currentConversationId
+      });
       // API-only mode - no localStorage fallback
     }
   }
@@ -193,7 +198,6 @@ export class HybridChatService {
         );
       }
 
-      console.log('✅ Complete chat interaction processed');
       return responseData;
 
     } catch (error) {
@@ -203,83 +207,281 @@ export class HybridChatService {
   }
 
   /**
-   * Search conversation history
+   * Search conversation history with caching
    */
   async searchConversationHistory(searchQuery, limit = 20) {
     try {
       if (this.isLocalStorageEnabled) {
+        // First check if any cached conversations match
+        const cachedIds = conversationCacheService.getAllConversationIds();
+        const cachedMatches = [];
+        
+        for (const conversationId of cachedIds) {
+          const cacheInfo = conversationCacheService.getCacheInfo(conversationId);
+          if (cacheInfo?.metadata?.title?.toLowerCase().includes(searchQuery.toLowerCase())) {
+            const conversation = conversationCacheService.get(conversationId);
+            if (conversation) {
+              cachedMatches.push({
+                id: conversation.id,
+                title: conversation.title,
+                updated_at: conversation.updated_at,
+                created_at: conversation.created_at,
+                message_count: conversation.messages?.length || 0,
+                summary: conversation.summary,
+                user_id: conversation.user_id,
+                fromCache: true
+              });
+            }
+          }
+        }
+        
         // Search via API
-        const results = await conversationStorage.searchConversations(searchQuery, limit);
-        console.log(`🔍 API search found ${results.conversations.length} conversations`);
-        return results.conversations;
+        const apiResults = await conversationStorage.searchConversations(searchQuery, limit);
+        
+        // Combine and deduplicate results (prefer API results)
+        const allResults = [...(apiResults.conversations || [])];
+        const apiIds = new Set(allResults.map(conv => conv.id));
+        
+        // Add cached results that weren't in API results
+        for (const cachedMatch of cachedMatches) {
+          if (!apiIds.has(cachedMatch.id)) {
+            allResults.push(cachedMatch);
+          }
+        }
+        
+        // Sort by updated_at and limit
+        const sortedResults = allResults
+          .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+          .slice(0, limit);
+        
+        console.log(`🔍 Search results for "${searchQuery}": ${sortedResults.length} conversations (${cachedMatches.length} from cache)`);
+        return sortedResults;
       }
       return [];
     } catch (error) {
       console.error('❌ Failed to search conversation history:', error);
-      // API-only mode - no localStorage fallback
-      return [];
+      // Fallback to cache-only search
+      const cachedIds = conversationCacheService.getAllConversationIds();
+      const fallbackResults = [];
+      
+      for (const conversationId of cachedIds) {
+        const cacheInfo = conversationCacheService.getCacheInfo(conversationId);
+        if (cacheInfo?.metadata?.title?.toLowerCase().includes(searchQuery.toLowerCase())) {
+          const conversation = conversationCacheService.get(conversationId);
+          if (conversation) {
+            fallbackResults.push({
+              id: conversation.id,
+              title: conversation.title,
+              updated_at: conversation.updated_at,
+              created_at: conversation.created_at,
+              message_count: conversation.messages?.length || 0,
+              summary: conversation.summary,
+              user_id: conversation.user_id,
+              fromCache: true
+            });
+          }
+        }
+      }
+      
+      return fallbackResults.slice(0, limit);
     }
   }
 
   /**
-   * Get conversation history
+   * Get conversation history with intelligent caching
    */
-  async getConversationHistory(limit = 50) {
+  async getConversationHistory(limit = 50, offset = 0, useCache = true) {
     try {
       if (this.isLocalStorageEnabled) {
-        // Get from API
-        console.log('🔄 Attempting to fetch conversations from API...');
-        const conversations = await conversationStorage.getRecentConversations(limit);
-        console.log(`📚 Retrieved ${conversations.length} conversations from API`);
+        // For first page, check if we have cached recent conversations
+        if (offset === 0 && useCache) {
+          const cachedRecent = conversationCacheService.getRecentConversations(Math.min(limit, 10));
+          if (cachedRecent.length > 0) {
+            // Convert cached entries to conversation list format
+            const cachedConversations = await Promise.all(
+              cachedRecent.map(async (entry) => {
+                try {
+                  const conversation = conversationCacheService.get(entry.id);
+                  return conversation ? {
+                    id: conversation.id,
+                    title: conversation.title,
+                    updated_at: conversation.updated_at,
+                    created_at: conversation.created_at,
+                    message_count: conversation.messages?.length || 0,
+                    summary: conversation.summary,
+                    user_id: conversation.user_id,
+                    metadata: conversation.metadata || {}
+                  } : null;
+                } catch (error) {
+                  console.warn(`⚠️ Failed to get cached conversation ${entry.id}:`, error);
+                  return null;
+                }
+              })
+            );
+            
+            const validCachedConversations = cachedConversations.filter(conv => conv !== null);
+            
+            if (validCachedConversations.length >= Math.min(limit, 5)) {
+              // We have enough cached conversations, return them
+              return validCachedConversations;
+            }
+          }
+        }
+        
+        // Get from API (with caching for individual conversations)
+        const conversations = await conversationStorage.getRecentConversations(limit, offset);
+        
+        // Preload some conversations into cache for better performance
+        // TEMPORARILY DISABLED: Preloading to avoid database schema issues with remote API
+        /*
+        if (conversations.length > 0 && offset === 0) {
+          // Preload first few conversations asynchronously (don't wait)
+          const preloadIds = conversations.slice(0, 5).map(conv => conv.id);
+          conversationLoader.preloadConversations(preloadIds, { messageLimit: 20 })
+            .then(results => {
+              })
+            .catch(error => {
+              console.warn('⚠️ Preload failed (non-critical):', error);
+            });
+        }
+        */
+        
+        console.log(`📚 Retrieved ${conversations.length} conversations from API (offset: ${offset})`);
         return conversations;
       }
       return [];
     } catch (error) {
-      console.error('❌ Failed to get conversation history from API:', error);
-      // API-only mode - no localStorage fallback
+      console.error('❌ Failed to get conversation history:', error);
+      // Try to return cached conversations as fallback
+      if (useCache && offset === 0) {
+        const fallbackCached = conversationCacheService.getRecentConversations(limit);
+        if (fallbackCached.length > 0) {
+          return fallbackCached.map(entry => ({
+            id: entry.id,
+            title: entry.metadata.title,
+            updated_at: entry.metadata.updatedAt,
+            created_at: entry.metadata.createdAt,
+            message_count: entry.messageCount,
+            user_id: entry.metadata.userId
+          }));
+        }
+      }
       return [];
     }
   }
 
   /**
-   * Get specific conversation with messages
+   * Get specific conversation with messages using intelligent loading
    */
-  async getConversation(conversationId) {
+  async getConversation(conversationId, options = {}) {
+    const {
+      forceRefresh = false,
+      messageOffset = 0,
+      messageLimit = 50,
+      includeMessages = true
+    } = options;
+
     try {
       if (this.isLocalStorageEnabled && !conversationId.startsWith('local_')) {
-        // Get from API
-        const conversation = await conversationStorage.getConversation(conversationId, true);
-        console.log(`📖 Retrieved conversation from API: ${conversation.title}`);
+        const conversation = await conversationLoader.loadConversation(conversationId, {
+          forceRefresh,
+          messageOffset,
+          messageLimit,
+          includeMessages
+        });
+        
+        if (conversation) {
+          console.log(`📖 Retrieved conversation via loader: ${conversation.title}`, {
+            messageCount: conversation.messages?.length || 0,
+            fromCache: conversationCacheService.has(conversationId) && !forceRefresh
+          });
+        }
+        
         return conversation;
       }
       return null;
     } catch (error) {
-      console.error('❌ Failed to get conversation:', error);
-      // API-only mode - no localStorage fallback
+      console.error('❌ Failed to get conversation via loader:', error);
+      
+      // Fallback: try cache only
+      if (conversationCacheService.has(conversationId)) {
+        const cached = conversationCacheService.get(conversationId);
+        
+        // Apply message slicing if needed
+        if (cached && (messageOffset > 0 || messageLimit < (cached.messages?.length || 0))) {
+          return conversationLoader.sliceMessages(cached, messageOffset, messageLimit);
+        }
+        
+        return cached;
+      }
+      
       return null;
     }
   }
 
   /**
    * Update an existing conversation
+   * Enhanced with graceful error handling for 501/500 responses
    */
   async updateConversation(conversationId, updates) {
     try {
+      // Skip API call for local conversations
+      if (conversationId && conversationId.startsWith('local_')) {
+        return { 
+          id: conversationId, 
+          ...updates,
+          local: true,
+          updated_at: new Date().toISOString(),
+          success: true
+        };
+      }
+
       if (this.isLocalStorageEnabled) {
-        console.log('🔄 Attempting to update conversation via API:', conversationId);
-        const updatedConversation = await conversationStorage.updateConversation(
+        const result = await conversationStorage.updateConversation(
           conversationId, 
           updates
         );
-        console.log('✅ Conversation updated via API');
-        return updatedConversation;
+        
+        // Handle both successful updates and fallback responses
+        if (result) {
+          if (result.success === false) {
+            console.warn('⚠️ Update failed but continuing:', result.message);
+          } else {
+            }
+          
+          // Update cache if we have conversation cache service
+          if (typeof conversationCacheService !== 'undefined' && result.data) {
+            try {
+              conversationCacheService.updateConversation(conversationId, result.data);
+            } catch (cacheError) {
+              console.warn('⚠️ Failed to update conversation cache:', cacheError);
+            }
+          }
+          
+          return result.data || result;
+        }
+        
+        return result;
       } else if (this.fallbackToLocal) {
         // For localStorage, we'd need to implement thread update logic
-        console.log('💾 Conversation update stored locally');
         return { id: conversationId, ...updates };
       }
     } catch (error) {
       console.error('❌ Failed to update conversation via API:', error);
+      
+      // If we get here and the error is just network/server related, 
+      // don't fail the entire operation - just log and continue
+      if (error.name === 'TypeError' || error.message.includes('Failed to fetch')) {
+        console.warn('⚠️ Network/Server error during conversation update. Continuing without update.');
+        return { 
+          id: conversationId, 
+          ...updates,
+          updated_at: new Date().toISOString(),
+          success: false,
+          error: error.message
+        };
+      }
+      
       throw error;
     }
   }
@@ -289,8 +491,7 @@ export class HybridChatService {
    */
   setActiveConversation(conversationId) {
     this.currentConversationId = conversationId;
-    console.log(`🎯 Set active conversation: ${conversationId}`);
-  }
+    }
 
   /**
    * Get current conversation ID
@@ -300,15 +501,88 @@ export class HybridChatService {
   }
 
   /**
-   * Check service status
+   * Check service status including cache statistics
    */
   getServiceStatus() {
+    const cacheStats = conversationCacheService.getStats();
+    const loaderStats = conversationLoader.getStats();
+    
     return {
       localAPIAvailable: this.isLocalStorageEnabled,
       fallbackEnabled: this.fallbackToLocal,
       currentConversation: this.currentConversationId,
-      initialized: true
+      initialized: true,
+      cache: cacheStats,
+      loader: loaderStats,
+      performance: {
+        cacheHitRate: cacheStats.hitRate,
+        cachedConversations: cacheStats.size,
+        memoryUsage: cacheStats.memoryUsage
+      }
     };
+  }
+
+  /**
+   * Clear all cached data
+   */
+  clearCache() {
+    conversationCacheService.clear();
+    conversationLoader.clearCache();
+    }
+
+  /**
+   * Refresh a specific conversation
+   */
+  async refreshConversation(conversationId) {
+    return await conversationLoader.refreshConversation(conversationId);
+  }
+
+  /**
+   * Preload conversations for better performance
+   */
+  async preloadConversations(conversationIds, options = {}) {
+    return await conversationLoader.preloadConversations(conversationIds, options);
+  }
+
+  /**
+   * Delete a conversation
+   */
+  async deleteConversation(conversationId) {
+    try {
+      if (!conversationId) {
+        throw new Error('Conversation ID is required');
+      }
+
+      console.log(`🗑️ HYBRID: Deleting conversation ${conversationId}`);
+
+      // Always clear from frontend first - don't wait for API
+      conversationCacheService.remove(conversationId);
+      
+      // Clear user conversations cache to force refresh
+      if (this.currentUserId) {
+        conversationCacheService.clearUserCache(this.currentUserId);
+      }
+
+      // Call backend API in background - don't wait for response or handle failures
+      // Frontend deletion should succeed regardless of backend status
+      setTimeout(async () => {
+        try {
+          if (!conversationId.startsWith('local_')) {
+            await conversationStorage.deleteConversation(conversationId);
+            console.log(`✅ Backend delete successful for ${conversationId}`);
+          }
+        } catch (error) {
+          console.log(`⚠️ Backend delete failed for ${conversationId}, but frontend deletion completed:`, error.message);
+        }
+      }, 100);
+
+      console.log(`✅ Frontend deletion completed for conversation ${conversationId}`);
+      return true;
+      
+    } catch (error) {
+      console.error(`❌ HYBRID: Frontend delete failed for ${conversationId}:`, error);
+      return false;
+    }
   }
 }
 

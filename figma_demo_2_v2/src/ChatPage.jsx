@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import MenuSidebar from './MenuSidebar';
 import { useAccessToken } from './components/UseToken';
@@ -7,6 +7,8 @@ import { uuidv4, cleanStreamText } from './utils/workforceAgentUtils';
 import { API_ENDPOINTS } from './config/api';
 import { hybridChatService } from './services/hybridChatService';
 import { conversationStorage } from './services/conversationStorageService';
+import { conversationLoader } from './services/conversationLoaderService';
+import { conversationCacheService } from './services/conversationCacheService';
 
 // Text formatting utilities
 const formatTextWithLinks = (text) => {
@@ -49,12 +51,12 @@ const formatTextWithLinks = (text) => {
     .replace(/["']+/g, '')                              // Remove all single/double quotes
     .replace(/\\n/g, '<br />')                          // Literal \n to <br>
     .replace(/\n/g, '<br />')                           // Convert actual newlines to <br>
-    .replace(/ {3}- /g, '   • ')                        // Indented dashes to bullets
+    .replace(/ {3}- /g, '   â€¢ ')                        // Indented dashes to bullets
     .replace(/\n{3,}/g, '\n\n')                         // if there are 3 or more consecutive newlines reduce to 2 new lines
     .replace(/<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>/gi, '<br /><br />'); // Reduce triple line breaks to double
     
   // Step 3: Handle list items (preserve ** for bold)
-  formattedText = formattedText.replace(/- (\*\*[^*]+\*\*)/g, '• $1');
+  formattedText = formattedText.replace(/- (\*\*[^*]+\*\*)/g, 'â€¢ $1');
     
   // Step 4: FINAL - Convert **text** to bold (this must be LAST)
   // Use inline style to guarantee bold rendering regardless of external CSS
@@ -95,7 +97,7 @@ const extractReferenceLinks = (text) => {
   return links;
 };
 
-const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThread, isNewChat, isNewChatActive, onNewChat, onThreadSelect, onFirstMessage, userInfo }) => {
+const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThread, isNewChat, isNewChatActive, onNewChat, onThreadSelect, onFirstMessage, onThreadUpdate, userInfo }) => {
   const location = useLocation();
   const { getToken } = useAccessToken();
   
@@ -128,17 +130,18 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     setLoading(true);
     setApiTriggered(true);
     
-    // 🔄 Create conversation if this is a new chat
+    // ðŸ”„ Reset save flags for new message
+    window.userQuestionSaved = false;
+    window.assistantResponseSaved = false;
+    // ðŸ”„ Create conversation if this is a new chat
     try {
       if (isNewChat || !hybridChatService.getCurrentConversationId()) {
         const conversationTitle = inputText.length > 50 ? 
           inputText.substring(0, 50) + '...' : inputText;
-        console.log('🔄 Creating new conversation:', conversationTitle);
         const conversationId = await hybridChatService.startNewConversation(conversationTitle);
-        console.log('✅ Conversation created:', conversationId);
-      }
+        }
     } catch (error) {
-      console.error('❌ Failed to create conversation:', error);
+      console.error('âŒ Failed to create conversation:', error);
       // Continue with chat even if conversation creation fails
     }
     
@@ -148,19 +151,16 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     
     const domainid = DEFAULT_DOMAIN_ID; // Use AG04333 as default
     
-    // 🆔 Set the domain ID for conversation storage
+    // ðŸ†” Set the domain ID for conversation storage
     hybridChatService.setUserId(domainid);
     
     const apiStartTime = performance.now(); // Move outside try block
 
     // Quick connectivity check
-    console.log('🔍 Checking network connectivity...');
     try {
       await fetch('https://httpbin.org/get', { method: 'HEAD', mode: 'no-cors' });
-      console.log('✅ Basic network connectivity confirmed');
-    } catch (connectivityError) {
-      console.warn('⚠️ Basic connectivity check failed:', connectivityError.message);
-    }
+      } catch (connectivityError) {
+      }
 
     let userMessage, botMessage;
 
@@ -189,12 +189,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       setMessages(prev => [...prev, userMessage, botMessage]);
     }
 
-    // 🔄 Save user question to conversation immediately
+    // ðŸ”„ Save user question to conversation immediately
     try {
-      console.log('🔄 Starting user question save process...');
-      console.log('🔍 hybridChatService available:', !!hybridChatService);
-      console.log('🔍 saveUserQuestion method available:', typeof hybridChatService.saveUserQuestion);
-      
       await hybridChatService.saveUserQuestion(
         inputText, 
         { 
@@ -203,10 +199,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           domain_id: domainid
         }
       );
-      console.log('✅ User question saved to conversation');
-    } catch (storageError) {
-      console.error('❌ Failed to save user question:', storageError);
-      console.error('❌ Error details:', {
+      } catch (storageError) {
+      console.error('âŒ Failed to save user question:', storageError);
+      console.error('âŒ Error details:', {
         name: storageError.name,
         message: storageError.message,
         stack: storageError.stack
@@ -215,11 +210,6 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
     try {
       const token = await getToken(DEFAULT_DOMAIN_ID);
-      console.log('📤 API Request started at:', new Date().toISOString());
-      console.log('🔑 Token received:', token ? 'Yes' : 'No');
-      console.log('📍 Domain ID:', domainid);
-      console.log('❓ Question:', inputText);
-      
       const response = await fetch(API_ENDPOINTS.WORKFORCE_CHAT, {
         method: 'GET',
         headers: {
@@ -229,8 +219,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           domainid: domainid.toUpperCase(),
         },
       }).catch(fetchError => {
-        console.error('🚨 Fetch failed:', fetchError);
-        console.error('🌐 Network error details:', {
+        console.error('ðŸš¨ Fetch failed:', fetchError);
+        console.error('ðŸŒ Network error details:', {
           name: fetchError.name,
           message: fetchError.message,
           stack: fetchError.stack
@@ -238,25 +228,17 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         throw new Error(`Network request failed: ${fetchError.message}`);
       });
 
-      console.log('📡 Response status:', response.status);
-      console.log('📋 Full API Response Object:', response);
-      console.log('📋 Response Headers:', [...response.headers.entries()]);
       
       const responseStartTime = performance.now();
-      console.log('📥 API Response received at:', new Date().toISOString());
-      console.log('⏱️ Time to first response:', (responseStartTime - apiStartTime).toFixed(2), 'ms');
 
       if (!response.ok) {
-        console.error('❌ API Error:', response.status, await response.text());
+        console.error('âŒ API Error:', response.status, await response.text());
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       // Clone the response so we can check content without consuming the stream
       const responseClone = response.clone();
       const responseText = await responseClone.text();
-      console.log('📄 Full Response Text:', responseText);
-      console.log('📏 Response Text Length:', responseText.length);
-
       // If response is short, it might be a simple message OR a control marker like <<LiveAgent>>.
       if (responseText.length < 50) {
         const shortText = (responseText || '').trim();
@@ -291,6 +273,26 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                 }
               : msg
           ));
+          
+          // ðŸ”„ Save short response immediately (SHORT RESPONSE SAVE)
+          try {
+            await hybridChatService.saveAssistantResponse(
+              cleanedShort,
+              inputText,
+              { 
+                source: 'workforce_agent_short',
+                timestamp: Date.now(),
+                chat_id: botChatId,
+                response_type: 'short_response',
+                content_length: cleanedShort.length
+              }
+            );
+            
+            window.responseAlreadySaved = true;
+            } catch (shortResponseError) {
+            console.error('âŒ [SHORT_RESPONSE] Failed to save short response:', shortResponseError);
+            // Don't throw - let the UI continue working
+          }
         }
         return;
       }
@@ -311,18 +313,12 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
         if (!firstChunkReceived) {
           const firstChunkTime = performance.now();
-          console.log('🎯 First chunk received at:', new Date().toISOString());
-          console.log('⏱️ Time to first chunk:', (firstChunkTime - apiStartTime).toFixed(2), 'ms');
           firstChunkReceived = true;
         }
 
         chunkCount++;
         let chunk = decoder.decode(value, { stream: true });
         streamBuffer += chunk; // append to global buffer for cross-chunk detection
-        console.log(`📦 Chunk #${chunkCount}:`, chunk);
-        console.log(`📦 Chunk #${chunkCount} Length:`, chunk.length);
-        console.log(`📦 Chunk #${chunkCount} Raw Bytes:`, value);
-        console.log(`📦 Stream Buffer (accumulated):`, streamBuffer);
 
         // If chunk contains start of marker but not full marker, mark partial and strip it from processing portion
         if (!liveAgentTriggered && /<<Live(Agent)?>?/i.test(chunk) && !chunk.includes('<<LiveAgent>>')) {
@@ -417,10 +413,6 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       }
 
       const completionTime = performance.now();
-      console.log('✅ Streaming completed at:', new Date().toISOString());
-      console.log('⏱️ Total response time:', ((completionTime - apiStartTime) / 1000).toFixed(2), 'seconds');
-      console.log('📊 Total chunks received:', chunkCount);
-
       // Handle live agent routing
       if (liveAgentTriggered) {
         setMessages(prev => prev.map(msg => 
@@ -450,63 +442,132 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             : msg
         ));
 
-        // 🔄 Save to hybrid chat service (replaces localStorage save)
+        // ðŸ”„ Save assistant response immediately after completion (PRIMARY SAVE)
+        if (partialMessage && partialMessage.trim().length > 0) {
+          try {
+            
+            await hybridChatService.saveAssistantResponse(
+              partialMessage.trim(),
+              inputText,
+              { 
+                source: 'workforce_agent_completion',
+                chat_type: 'bot',
+                streaming_completed: true,
+                timestamp: Date.now(),
+                chat_id: botChatId,
+                session_id: Date.now().toString(),
+                domain_id: domainid
+              }
+            );
+            // Mark that we've saved the response to avoid duplicate saves
+            window.assistantResponseSaved = true;
+            
+          } catch (responseError) {
+            console.error('âŒ [COMPLETION] Failed to save assistant response:', responseError);
+          }
+        } else {
+          }
+
+        // ðŸ”„ Save to hybrid chat service (replaces localStorage save)
         try {
-          await hybridChatService.saveUserQuestion(
-            inputText, 
-            { 
-              source: 'chat_page', 
-              timestamp: Date.now(),
-              chat_id: botChatId,
-              session_id: Date.now().toString(),
-              domain_id: domainid
-            }
-          );
           
-          await hybridChatService.saveAssistantResponse(
-            partialMessage,
-            inputText,
-            { 
-              source: 'workforce_agent',
-              chat_type: 'bot',
-              streaming_response: true,
-              timestamp: Date.now(),
-              chat_id: botChatId,
-              session_id: Date.now().toString(),
-              domain_id: domainid
+          // Only save user question if not already saved (avoid duplicate)
+          if (!window.userQuestionSaved) {
+            await hybridChatService.saveUserQuestion(
+              inputText, 
+              { 
+                source: 'chat_page', 
+                timestamp: Date.now(),
+                chat_id: botChatId,
+                session_id: Date.now().toString(),
+                domain_id: domainid
+              }
+            );
+            window.userQuestionSaved = true; // Prevent duplicate saves
+          } else {
             }
-          );
           
-          console.log('✅ Chat interaction saved to hybrid service');
-        } catch (storageError) {
-          console.error('⚠️ Hybrid service failed:', storageError);
+          // Save assistant response if we have content (BACKUP SAVE - only if primary save failed)
+          if (!window.assistantResponseSaved && partialMessage && partialMessage.trim().length > 0) {
+            await hybridChatService.saveAssistantResponse(
+              partialMessage.trim(),
+              inputText,
+              { 
+                source: 'workforce_agent_backup',
+                chat_type: 'bot',
+                streaming_response: true,
+                timestamp: Date.now(),
+                chat_id: botChatId,
+                session_id: Date.now().toString(),
+                domain_id: domainid
+              }
+            );
+            window.assistantResponseSaved = true;
+          } else if (window.assistantResponseSaved) {
+            } else {
+            // Try to get the response from the messages array as fallback
+            const currentMessages = messages;
+            const lastBotMessage = currentMessages.filter(m => m.type === 'bot').pop();
+            if (lastBotMessage && lastBotMessage.text && lastBotMessage.text.trim().length > 0) {
+              
+              try {
+                await hybridChatService.saveAssistantResponse(
+                  lastBotMessage.text.trim(),
+                  inputText,
+                  { 
+                    source: 'workforce_agent_fallback',
+                    chat_type: 'bot',
+                    streaming_response: false,
+                    timestamp: Date.now(),
+                    chat_id: lastBotMessage.id,
+                    session_id: Date.now().toString(),
+                    domain_id: domainid
+                  }
+                );
+                window.assistantResponseSaved = true;
+              } catch (fallbackError) {
+                console.error('âŒ [FALLBACK] Fallback response save also failed:', fallbackError);
+              }
+            } else {
+              }
+          }
+          
+          } catch (storageError) {
+          console.error('âŒ Hybrid service save failed:', storageError);
+          console.error('âŒ Storage error details:', {
+            name: storageError.name,
+            message: storageError.message,
+            stack: storageError.stack,
+            partialMessageLength: partialMessage?.length || 0,
+            conversationId: hybridChatService.getCurrentConversationId()
+          });
           // API-only mode - no localStorage fallback
         }
       }
 
     } catch (error) {
       const errorTime = performance.now();
-      console.error('💥 API Error at:', new Date().toISOString());
-      console.error('⏱️ Time until error:', (errorTime - apiStartTime).toFixed(2), 'ms');
-      console.error('❌ Error details:', error);
-      console.error('❌ Error name:', error.name);
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Error stack:', error.stack);
-      console.error('❌ Partial message received:', partialMessage ? partialMessage.substring(0, 100) : 'None');
+      console.error('ðŸ’¥ API Error at:', new Date().toISOString());
+      console.error('â±ï¸ Time until error:', (errorTime - apiStartTime).toFixed(2), 'ms');
+      console.error('âŒ Error details:', error);
+      console.error('âŒ Error name:', error.name);
+      console.error('âŒ Error message:', error.message);
+      console.error('âŒ Error stack:', error.stack);
+      console.error('âŒ Partial message received:', partialMessage ? partialMessage.substring(0, 100) : 'None');
       
       // Determine user-friendly error message based on error type
-      let userErrorMessage = '⚠️ Unable to fetch response. Please try again.';
+      let userErrorMessage = 'âš ï¸ Unable to fetch response. Please try again.';
       
       if (error.message.includes('Failed to fetch') || error.message.includes('Network request failed')) {
-        userErrorMessage = '🌐 Network connection issue. Please check your internet connection and try again.';
+        userErrorMessage = 'ðŸŒ Network connection issue. Please check your internet connection and try again.';
       } else if (error.message.includes('HTTP error! status: 401')) {
-        userErrorMessage = '🔐 Authentication failed. Please refresh the page and try again.';
+        userErrorMessage = 'ðŸ” Authentication failed. Please refresh the page and try again.';
       } else if (error.message.includes('HTTP error! status: 403')) {
-        userErrorMessage = '🚫 Access denied. You may not have permission to access this service.';
+        userErrorMessage = 'ðŸš« Access denied. You may not have permission to access this service.';
       } else if (error.message.includes('HTTP error! status: 500')) {
-        userErrorMessage = '⚙️ Server error. The service is temporarily unavailable. Please try again later.';
+        userErrorMessage = 'âš™ï¸ Server error. The service is temporarily unavailable. Please try again later.';
       } else if (error.message.includes('HTTP error! status: 503')) {
-        userErrorMessage = '🔧 Service temporarily unavailable. Please try again in a few moments.';
+        userErrorMessage = 'ðŸ”§ Service temporarily unavailable. Please try again in a few moments.';
       }
       
       setMessages(prev => prev.map(msg =>
@@ -526,33 +587,41 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       setLoading(false);
       setStreamingMessageId(null);
       
-      // 🔄 Save conversation to hybrid chat service after completion
+      // ðŸ”„ Ensure response is saved even if there were errors during streaming
       try {
-        const finalMessages = [...messages];
-        const userMsg = finalMessages.find(msg => msg.type === 'user');
-        const assistantMsg = finalMessages.find(msg => msg.type === 'assistant' && msg.completed);
+        // Check if we have a completed response that wasn't saved
+        const currentMessages = messages;
+        const assistantMsg = currentMessages.find(msg => 
+          msg.chat_id === botChatId && 
+          msg.type === 'assistant' && 
+          msg.completed &&
+          msg.text &&
+          msg.text.trim().length > 0
+        );
         
-        if (userMsg && assistantMsg && assistantMsg.text) {
-          await hybridChatService.saveUserQuestion(
-            userMsg.text, 
-            { source: 'chat_page', timestamp: Date.now() }
-          );
-          
+        // Only save if we have content and haven't already saved
+        if (assistantMsg && assistantMsg.text && !window.responseAlreadySaved) {
           await hybridChatService.saveAssistantResponse(
             assistantMsg.text,
-            userMsg.text,
+            inputText,
             { 
-              source: 'workforce_agent',
-              original_text: assistantMsg.originalText,
-              streaming_response: true,
-              timestamp: Date.now()
+              source: 'workforce_agent_finally',
+              timestamp: Date.now(),
+              chat_id: botChatId,
+              fallback_save: true
             }
           );
           
-          console.log('✅ Conversation saved to hybrid chat service');
-        }
-      } catch (storageError) {
-        console.warn('⚠️ Failed to save to hybrid chat service, fallback handled:', storageError);
+          window.responseAlreadySaved = true;
+          } else {
+          }
+        
+        // Reset the save tracking flags for next message
+        window.userQuestionSaved = false;
+        window.responseAlreadySaved = false;
+        
+      } catch (finalSaveError) {
+        console.error('âŒ Finally block save failed:', finalSaveError);
       }
     }
   };
@@ -750,7 +819,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           body: JSON.stringify(payload)
         });
       } catch (postErr) {
-        console.error('❌ Failed to notify backend:', postErr);
+        console.error('âŒ Failed to notify backend:', postErr);
       }
 
       // UI message
@@ -810,19 +879,12 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       const isFirstMessage = () => !messages.some(m => m.type === 'live_agent');
 
       ws.onopen = () => {
-        console.log('✅ WebSocket connected');
         resetInactivityTimer(domainid);
       };
 
       ws.onmessage = (event) => {
         try {
-          console.log('🔌 Raw WebSocket Message Received:', event.data);
-          console.log('🔌 WebSocket Event Object:', event);
-          
           const msg = JSON.parse(event.data);
-          console.log('🔌 Parsed WebSocket Message:', msg);
-          console.log('🔌 Message Type:', typeof msg);
-          console.log('🔌 Message Keys:', Object.keys(msg));
           
           // Try both payload shapes from samples
           const directText = typeof msg?.text === 'string' ? msg.text : '';
@@ -834,10 +896,6 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           const agentName = msg?.agentName;
           const text = directText || fromBody || '';
           
-          console.log('🔌 Extracted Text:', text);
-          console.log('🔌 Agent Name:', agentName);
-          console.log('🔌 Completed:', completed);
-
           resetInactivityTimer(domainid);
 
           // System conditions
@@ -867,18 +925,17 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             text: renderLiveAgentMessage(text, isFirstMessage(), agentName)
           }]));
         } catch (err) {
-          console.error('🚨 Failed to parse WebSocket message:', err);
-          postSystemAndTerminate('Apologies—your live agent session was disconnected due to a technical issue. Kindly try again later.', domainid);
+          console.error('ðŸš¨ Failed to parse WebSocket message:', err);
+          postSystemAndTerminate('Apologiesâ€”your live agent session was disconnected due to a technical issue. Kindly try again later.', domainid);
         }
       };
 
       ws.onerror = (e) => {
-        console.error('❌ WebSocket error', e);
+        console.error('âŒ WebSocket error', e);
         postSystemAndTerminate('A technical issue occurred. Please try reconnecting.', domainid);
       };
 
       ws.onclose = () => {
-        console.log('🔌 WebSocket closed');
         if (inactivityTimerRef.current) {
           clearTimeout(inactivityTimerRef.current);
           inactivityTimerRef.current = null;
@@ -958,48 +1015,6 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     scrollToBottom();
   }, [messages]);
 
-  // Save thread when coming from main page or when messages are updated
-  useEffect(() => {
-    const saveThreadIfNeeded = async () => {
-      if (currentThread && messages.length >= 2) {
-        // Check if this is a manual input with response (coming from main page or URL)
-        const isManualInput = (currentThread.conversation?.length === 1 && 
-                             currentThread.conversation[0].type === 'user' &&
-                             messages.length === 2 &&
-                             messages[0].type === 'user' &&
-                             messages[1].type === 'assistant') ||
-                             (urlQuery && urlType === 'manual');
-        
-        if (isManualInput || (effectiveQuestion && !isNewChat)) {
-          const threadToSave = {
-            ...currentThread,
-            conversation: messages
-          };
-          await saveThreadToStorage(threadToSave);
-        }
-      }
-    };
-    
-    saveThreadIfNeeded();
-  }, [effectiveQuestion, isNewChat, currentThread, messages, urlQuery, urlType]);
-
-  // Handle manual input case - save the conversation with response
-  useEffect(() => {
-    const saveManualThread = async () => {
-      if (currentThread?.conversation?.length === 1 && 
-          currentThread.conversation[0].type === 'user' && 
-          messages.length === 2) {
-        const threadToSave = {
-          ...currentThread,
-          conversation: messages
-        };
-        await saveThreadToStorage(threadToSave);
-      }
-    };
-    
-    saveManualThread();
-  }, [currentThread, messages]);
-
   // Update messages when thread changes
   useEffect(() => {
     if (currentThread?.conversation && currentThread.conversation.length > 1) {
@@ -1020,7 +1035,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         {
           id: 1,
           type: 'assistant',
-          text: 'Hello! I\'m here to help you with any questions you might have.',
+          text: 'Welcome! You can start by typing your message below.',
           isWelcome: true
         }
       ];
@@ -1038,6 +1053,204 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     // Reset API trigger flag when switching threads
     setApiTriggered(false);
   }, [currentThread?.id]);
+
+  // Handle conversation saving for new chats and follow-ups
+  useEffect(() => {
+    const handleConversationSaving = async () => {
+      // Only process if we have messages and they include both user and assistant messages
+      if (!messages || messages.length < 2) return;
+      
+      // Skip if we're still loading (response not complete)
+      if (loading) return;
+      
+      // Find the latest assistant message to check if response is complete
+      const latestAssistant = messages.filter(msg => msg.type === 'assistant').pop();
+      if (!latestAssistant || !latestAssistant.completed) return;
+      
+      try {
+        // Case 1: New chat - first message (should save with proper title)
+        if (isNewChat && currentThread && 
+            (!currentThread.conversation || currentThread.conversation.length === 0)) {
+          
+          const userMessage = messages.find(msg => msg.type === 'user');
+          if (userMessage) {
+            const updatedThread = {
+              ...currentThread,
+              title: userMessage.text.length > 50 ? 
+                userMessage.text.substring(0, 50) + '...' : userMessage.text,
+              conversation: messages
+            };
+            
+            await saveThreadToStorage(updatedThread);
+            onFirstMessage && onFirstMessage(updatedThread);
+            console.log('✅ New conversation saved to Today category with title:', updatedThread.title);
+            
+            // Note: Don't call setIsNewChat here since isNewChat is a prop
+            // The parent App.js will update this state via onFirstMessage
+          }
+        }
+        // Case 2: Follow-up message in existing conversation
+        else if (currentThread && !isNewChat && 
+                 currentThread.conversation && 
+                 messages.length > currentThread.conversation.length) {
+          
+          const updatedThread = {
+            ...currentThread,
+            conversation: messages
+          };
+          
+          await saveThreadToStorage(updatedThread);
+          onThreadUpdate && onThreadUpdate(updatedThread);
+          console.log('✅ Follow-up message saved to existing conversation:', currentThread.title);
+        }
+      } catch (error) {
+        console.error('❌ Failed to save conversation:', error);
+      }
+    };
+    
+    // Add a small delay to ensure all state updates are complete
+    const timeoutId = setTimeout(handleConversationSaving, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [messages, loading, isNewChat, currentThread]);
+
+  // Load conversation from URL if conversationId is provided
+  useEffect(() => {
+    const loadConversationFromUrl = async () => {
+      // Only proceed if we have a URL conversation ID and haven't already loaded it
+      if (!urlConversationId || apiTriggered) {
+        return;
+      }
+
+      try {
+        setLoading(true);
+        
+        // Set user ID for loader service
+        conversationLoader.setUserId(RESOLVED_DOMAIN_ID);
+        
+        // Load conversation with caching
+        const conversation = await conversationLoader.loadConversation(urlConversationId, {
+          forceRefresh: false,  // Use cache if available
+          messageOffset: 0,     // Start from beginning
+          messageLimit: 50,     // Initial batch
+          includeMessages: true
+        });
+
+        if (conversation && conversation.messages) {
+          // Set active conversation in hybrid service
+          hybridChatService.setActiveConversation(urlConversationId);
+          
+          // Convert API messages to UI format
+          const uiMessages = conversation.messages.map((msg, index) => ({
+            id: index + 1,
+            type: msg.message_type === 'user' ? 'user' : 'assistant',
+            text: msg.content,
+            chat_id: msg.id || `msg_${index}`,
+            completed: true,
+            timestamp: msg.created_at,
+            // Add reference links if available
+            referenceLinks: msg.reference_links || [],
+            // Preserve original message metadata
+            metadata: msg.metadata || {}
+          }));
+
+          setMessages(uiMessages);
+          setApiTriggered(true);
+
+          // Check if there are more messages to load
+          const hasMore = conversation.pagination?.hasMore || 
+                         (conversation.messages.length === 50);
+          setHasMoreMessages(hasMore);
+
+          // Clear URL parameters to prevent refresh issues
+          window.history.replaceState({}, document.title, window.location.pathname);
+
+          // Extract and set reference links from the last assistant message
+          const lastAssistantMessage = uiMessages
+            .filter(msg => msg.type === 'assistant')
+            .pop();
+          
+          if (lastAssistantMessage?.referenceLinks?.length > 0) {
+            setCurrentReferenceLinks(lastAssistantMessage.referenceLinks);
+          }
+
+        } else {
+          // Could show an error message or redirect
+        }
+
+      } catch (error) {
+        console.error(`âŒ Failed to load conversation from URL:`, error);
+        // Could show an error message to user
+        setMessages([{
+          id: 1,
+          type: 'system',
+          text: 'Sorry, I couldn\'t load that conversation. Please try again or start a new chat.',
+          completed: true
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadConversationFromUrl();
+  }, [urlConversationId, apiTriggered, RESOLVED_DOMAIN_ID]);
+
+  // Pagination state for long conversations
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
+
+  // Function to load more messages for pagination
+  const loadMoreMessages = async () => {
+    if (loadingMoreMessages || !hasMoreMessages || !hybridChatService.getCurrentConversationId()) {
+      return;
+    }
+
+    try {
+      setLoadingMoreMessages(true);
+      const currentMessageCount = messages.length;
+      
+      const moreData = await conversationLoader.loadConversation(
+        hybridChatService.getCurrentConversationId(),
+        {
+          forceRefresh: false,
+          messageOffset: currentMessageCount,
+          messageLimit: 50,
+          includeMessages: true
+        }
+      );
+
+      if (moreData?.messages?.length > 0) {
+        // Convert and append new messages
+        const newUiMessages = moreData.messages.map((msg, index) => ({
+          id: currentMessageCount + index + 1,
+          type: msg.message_type === 'user' ? 'user' : 'assistant',
+          text: msg.content,
+          chat_id: msg.id || `msg_${currentMessageCount + index}`,
+          completed: true,
+          timestamp: msg.created_at,
+          referenceLinks: msg.reference_links || [],
+          metadata: msg.metadata || {}
+        }));
+
+        setMessages(prev => [...prev, ...newUiMessages]);
+        
+        // Update hasMore based on returned message count
+        const hasMore = moreData.pagination?.hasMore || 
+                       (moreData.messages.length === 50);
+        setHasMoreMessages(hasMore);
+
+        } else {
+        setHasMoreMessages(false);
+        }
+
+    } catch (error) {
+      console.error('âŒ Failed to load more messages:', error);
+      // Don't show error to user, just stop trying to load more
+      setHasMoreMessages(false);
+    } finally {
+      setLoadingMoreMessages(false);
+    }
+  };
 
   // Auto-trigger live API for questions from main page or embedded page
   useEffect(() => {
@@ -1064,10 +1277,10 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
   const saveThreadToStorage = async (thread) => {
     try {
-      // 🔄 Use conversation API only (no localStorage)
+      // ðŸ”„ Use conversation API only (no localStorage)
       if (hybridChatService.getCurrentConversationId()) {
         // Update existing conversation title
-        await hybridChatService.updateConversation(
+        const updateResult = await hybridChatService.updateConversation(
           hybridChatService.getCurrentConversationId(),
           { 
             title: thread.title,
@@ -1080,15 +1293,21 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             }
           }
         );
-        console.log('✅ Thread updated via conversation API');
+        
+        // Handle both successful updates and fallback responses
+        if (updateResult && updateResult.success === false) {
+          } else {
+          }
       } else {
         // Create new conversation if none exists
         const newConversation = await hybridChatService.startNewConversation(thread.title);
-        console.log('✅ New thread created via conversation API:', newConversation);
-      }
+        }
     } catch (error) {
-      console.error('❌ Failed to save thread via API:', error);
-      // Note: No localStorage fallback - API-only mode
+      console.error('âŒ Failed to save thread via API:', error);
+      
+      // Don't throw the error - just log it and continue
+      // This prevents the entire chat from breaking due to update failures
+      // Note: No localStorage fallback - API-only mode but graceful degradation
     }
   };
 
@@ -1097,37 +1316,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       // Capture the question then clear input immediately so it disappears while streaming starts
       const questionToSend = userInput.trim();
       setUserInput(''); // clear before triggering API
+      
       // Use workforce agent for real responses
       await sendWorkforceAgentMessage(questionToSend);
-      
-      // Update thread management (existing logic)
-      if (isNewChat && currentThread && currentThread.conversation.length === 0) {
-        const updatedThread = {
-          ...currentThread,
-          title: questionToSend.length > 50 ? questionToSend.substring(0, 50) + '...' : questionToSend,
-          conversation: messages
-        };
-        await saveThreadToStorage(updatedThread);
-        onFirstMessage && onFirstMessage(updatedThread);
-      } else if (currentThread) {
-        // Update existing thread
-        const updatedThread = {
-          ...currentThread,
-          conversation: messages
-        };
-        await saveThreadToStorage(updatedThread);
-      } else if (userQuestion && !currentThread) {
-        // Create thread for main page question
-        const newThread = {
-          id: 'thread_' + Date.now(),
-          title: questionToSend.length > 50 ? questionToSend.substring(0, 50) + '...' : questionToSend,
-          conversation: messages
-        };
-        await saveThreadToStorage(newThread);
-        onFirstMessage && onFirstMessage(newThread);
-      }
-      
-      // Already cleared above; do not set again
     }
   };
 
@@ -1167,10 +1358,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           messageId,
           { liked: newLikedValue }
         );
-        console.log('💾 Like feedback stored successfully');
-      }
+        }
     } catch (error) {
-      console.error('❌ Failed to store like feedback:', error);
+      console.error('âŒ Failed to store like feedback:', error);
       // Optionally revert UI state on error
       setLikedMessages(prev => {
         const newSet = new Set(prev);
@@ -1213,10 +1403,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           messageId,
           { liked: newLikedValue }
         );
-        console.log('💾 Dislike feedback stored successfully');
-      }
+        }
     } catch (error) {
-      console.error('❌ Failed to store dislike feedback:', error);
+      console.error('âŒ Failed to store dislike feedback:', error);
       // Optionally revert UI state on error
       setDislikedMessages(prev => {
         const newSet = new Set(prev);
@@ -1279,15 +1468,13 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       try {
   token = await getToken(domainId, true); // Force real API using resolved domain
       } catch (tokenError) {
-        console.error('❌ Token fetch failed:', tokenError);
+        console.error('âŒ Token fetch failed:', tokenError);
         throw new Error(`Failed to get authentication token: ${tokenError.message}`);
       }
       
       if (!token) {
         throw new Error('Failed to get authentication token - token is null');
       }
-      
-      console.log('🚀 API Call for reload - endpoint:', API_ENDPOINTS.WORKFORCE_CHAT);
       
       let response;
       try {
@@ -1302,7 +1489,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           },
         });
       } catch (fetchError) {
-        console.error('❌ Fetch failed:', fetchError);
+        console.error('âŒ Fetch failed:', fetchError);
         throw new Error(`Network request failed: ${fetchError.message}`);
       }
       
@@ -1325,7 +1512,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         if (chunk.includes("<<LiveAgent>>")) {
           setMessages(prev => prev.map(msg => 
             msg.id === messageId 
-              ? { ...msg, text: "🔄 Connecting you to a live agent. Please wait...", isRegenerating: false, completed: true }
+              ? { ...msg, text: "ðŸ”„ Connecting you to a live agent. Please wait...", isRegenerating: false, completed: true }
                 : msg
           ));
           break;
@@ -1351,7 +1538,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       setStreamingMessageId(null);
       
     } catch (error) {
-      console.error('❌ Failed to reload response:', error);
+      console.error('âŒ Failed to reload response:', error);
       
       // Show error message and stop streaming
       setMessages(prev => prev.map(msg => 
@@ -1434,6 +1621,41 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
               alignSelf: 'stretch'
             }}
           >
+            {/* Load More Messages Button (appears at top when there are more messages) */}
+            {hasMoreMessages && (
+              <div className="w-full flex justify-center mb-4">
+                <button
+                  onClick={loadMoreMessages}
+                  disabled={loadingMoreMessages}
+                  className={`
+                    px-6 py-3 rounded-full border-2 transition-all duration-200
+                    ${isDarkMode 
+                      ? 'bg-[#1F3E81] border-[#2861BB] text-white hover:bg-[#2A4A8C]' 
+                      : 'bg-white border-[#2861BB] text-[#2861BB] hover:bg-[#F0F8FF]'
+                    }
+                    ${loadingMoreMessages ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md'}
+                  `}
+                >
+                  {loadingMoreMessages ? (
+                    <div className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Loading...
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="m18 15-6-6-6 6"/>
+                      </svg>
+                      Load More Messages
+                    </div>
+                  )}
+                </button>
+              </div>
+            )}
+
             {messages.map((message) => (
               <div key={message.id} style={{ width: '100%' }}>
                 {message.type === 'user' ? (
@@ -1456,7 +1678,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                           }}
                           className={`${isDarkMode ? 'bg-[#1F3E81] text-[#A0BEEA] hover:bg-[#2A4A8C]' : 'bg-[#F7F7F7] text-[#333333] hover:bg-[#E7E7E7]'} rounded p-3 text-sm text-left transition-colors cursor-pointer`}
                         >
-                          • {suggestion}
+                          â€¢ {suggestion}
                         </button>
                       ))}
                     </div>
@@ -1518,15 +1740,15 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                         {/* Show typing indicator for streaming messages */}
                         {!message.completed && (message.chat_id === streamingMessageId || message.id === streamingMessageId) && (
                           <span className="inline-flex ml-1">
-                            <span className="animate-pulse">●</span>
-                            <span className="animate-pulse animation-delay-200">●</span>
-                            <span className="animate-pulse animation-delay-400">●</span>
+                            <span className="animate-pulse">â—</span>
+                            <span className="animate-pulse animation-delay-200">â—</span>
+                            <span className="animate-pulse animation-delay-400">â—</span>
                           </span>
                         )}
                         {/* Show regenerating indicator */}
                         {message.isRegenerating && (
                           <span className={`inline-flex ml-2 text-xs ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                            🔄 Regenerating...
+                            ðŸ”„ Regenerating...
                           </span>
                         )}
                       </div>
@@ -1817,7 +2039,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                 <h2 className={`text-lg font-semibold ${
                   isDarkMode ? 'text-white' : 'text-[#1a366f]'
                 }`}>
-                  📚 Reference Links
+                  ðŸ“š Reference Links
                 </h2>
                 <button
                   onClick={() => setShowReferenceLinks(false)}
@@ -1904,3 +2126,4 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 };
 
 export default ChatPage;
+

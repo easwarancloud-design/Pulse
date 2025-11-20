@@ -27,11 +27,11 @@ router = APIRouter(prefix="/api", tags=["conversations"])
 
 @router.get("/conversations/health")
 async def health_check(
-    user_id: Optional[str] = Query(None, description="Optional user ID for testing")
+    domain_id: Optional[str] = Query(None, description="Optional domain ID for testing")
 ):
     """
     Health check endpoint for conversation service
-    Note: user_id is optional for health checks
+    Note: domain_id is optional for health checks
     Full path: /api/conversations/health
     """
     try:
@@ -80,7 +80,7 @@ async def create_conversation(
     Create a new conversation
     Full path: /api/conversations
     
-    - **user_id**: ID of the user creating the conversation (in request body)
+    - **domain_id**: ID of the domain creating the conversation (in request body)
     - **title**: Title of the conversation
     - **summary**: Optional summary of the conversation
     - **metadata**: Optional additional metadata
@@ -95,20 +95,20 @@ async def create_conversation(
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
     conversation_id: str = Path(..., description="Conversation ID"),
-    user_id: str = Query(..., description="User ID")
+    domain_id: str = Query(..., description="Domain ID")
 ):
     """
     Get a specific conversation with all messages
     
     - **conversation_id**: ID of the conversation to retrieve
-    - **user_id**: ID of the user requesting the conversation
+    - **domain_id**: ID of the domain requesting the conversation
     """
     try:
         # Handle local conversation IDs - return 404 for non-existent local conversations
         if conversation_id.startswith('local_'):
             raise HTTPException(status_code=404, detail="Local conversation not found in storage")
             
-        conversation = await conversation_service.get_conversation(conversation_id, user_id)
+        conversation = await conversation_service.get_conversation(conversation_id, domain_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return conversation
@@ -122,20 +122,20 @@ async def get_conversation(
 async def update_conversation(
     conversation_id: str = Path(..., description="Conversation ID"),
     update_data: ConversationUpdate = ...,
-    user_id: str = Query(..., description="User ID")
+    domain_id: str = Query(..., description="Domain ID")
 ):
     """
     Update a conversation
     
     - **conversation_id**: ID of the conversation to update
-    - **user_id**: ID of the user updating the conversation
+    - **domain_id**: ID of the domain updating the conversation
     - **title**: New title for the conversation (optional)
     - **summary**: New summary for the conversation (optional)
     - **status**: New status for the conversation (optional)
     - **metadata**: New metadata for the conversation (optional)
     """
     try:
-        conversation = await conversation_service.update_conversation(conversation_id, user_id, update_data)
+        conversation = await conversation_service.update_conversation(conversation_id, domain_id, update_data)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return conversation
@@ -145,19 +145,19 @@ async def update_conversation(
         logger.error(f"Failed to update conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
 
-@router.delete("/conversations/{conversation_id}")
+@router.post("/conversations/{conversation_id}/delete")
 async def delete_conversation(
     conversation_id: str = Path(..., description="Conversation ID"),
-    user_id: str = Query(..., description="User ID")
+    domain_id: str = Query(..., description="Domain ID")
 ):
     """
-    Delete a conversation (soft delete)
+    Delete a conversation (soft delete) - Using POST method for better compatibility
     
     - **conversation_id**: ID of the conversation to delete
-    - **user_id**: ID of the user deleting the conversation
+    - **domain_id**: ID of the domain deleting the conversation
     """
     try:
-        success = await conversation_service.delete_conversation(conversation_id, user_id)
+        success = await conversation_service.delete_conversation(conversation_id, domain_id)
         if not success:
             raise HTTPException(status_code=404, detail="Conversation not found")
         
@@ -172,20 +172,31 @@ async def delete_conversation(
         logger.error(f"Failed to delete conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete conversation: {str(e)}")
 
+# Legacy DELETE endpoint for backward compatibility
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation_legacy(
+    conversation_id: str = Path(..., description="Conversation ID"),
+    domain_id: str = Query(..., description="Domain ID")
+):
+    """
+    Legacy DELETE endpoint - redirects to POST delete for compatibility
+    """
+    return await delete_conversation(conversation_id, domain_id)
+
 # ================================================
 # USER CONVERSATIONS
 # ================================================
 
-@router.get("/conversations/user/{user_id}", response_model=List[ConversationSummary])
+@router.get("/conversations/user/{domain_id}", response_model=List[ConversationSummary])
 async def get_user_conversations(
-    user_id: str = Path(..., description="User ID"),
+    domain_id: str = Path(..., description="Domain ID"),
     limit: int = Query(20, ge=1, le=100, description="Number of conversations to return"),
     offset: int = Query(0, ge=0, description="Number of conversations to skip")
 ):
     """
-    Get all conversations for a user with pagination
+    Get all conversations for a domain with pagination
     
-    - **user_id**: ID of the user
+    - **domain_id**: ID of the domain
     - **limit**: Maximum number of conversations to return (1-100)
     - **offset**: Number of conversations to skip (for pagination)
     """
@@ -195,10 +206,10 @@ async def get_user_conversations(
             logger.error("Conversation service not properly initialized")
             return []
             
-        conversations = await conversation_service.get_user_conversations(user_id, limit, offset)
+        conversations = await conversation_service.get_user_conversations(domain_id, limit, offset)
         return conversations or []
     except Exception as e:
-        logger.error(f"Failed to get conversations for user {user_id}: {e}")
+        logger.error(f"Failed to get conversations for domain {domain_id}: {e}")
         # Return empty list instead of raising 500 error to prevent frontend crashes
         return []
 
@@ -210,13 +221,13 @@ async def get_user_conversations(
 async def add_message(
     conversation_id: str = Path(..., description="Conversation ID"),
     message_data: MessageCreate = ...,
-    user_id: str = Query(..., description="User ID")
+    domain_id: str = Query(..., description="Domain ID")
 ):
     """
     Add a message to a conversation
     
     - **conversation_id**: ID of the conversation
-    - **user_id**: ID of the user adding the message
+    - **domain_id**: ID of the domain adding the message
     - **message_type**: Type of message (user, assistant, system)
     - **content**: Message content
     - **metadata**: Optional additional metadata
@@ -224,7 +235,7 @@ async def add_message(
     - **token_count**: Optional token count for the message
     """
     try:
-        message = await conversation_service.add_message(conversation_id, user_id, message_data)
+        message = await conversation_service.add_message(conversation_id, domain_id, message_data)
         if not message:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return message
@@ -238,7 +249,7 @@ async def add_message(
 async def bulk_add_messages(
     conversation_id: str = Path(..., description="Conversation ID"),
     bulk_data: BulkMessageCreate = ...,
-    user_id: str = Query(..., description="User ID")
+    domain_id: str = Query(..., description="Domain ID")
 ):
     """
     Add multiple messages to a conversation
@@ -251,31 +262,31 @@ async def bulk_add_messages(
         # Ensure conversation_id matches
         bulk_data.conversation_id = conversation_id
         
-        result = await conversation_service.bulk_add_messages(bulk_data, user_id)
+        result = await conversation_service.bulk_add_messages(bulk_data, domain_id)
         return result
     except Exception as e:
         logger.error(f"Failed to bulk add messages to conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add messages: {str(e)}")
 
-@router.put("/conversations/{conversation_id}/messages/{message_id}/feedback")
+@router.post("/conversations/{conversation_id}/messages/{message_id}/feedback")
 async def update_message_feedback(
     conversation_id: str = Path(..., description="Conversation ID"),
     message_id: str = Path(..., description="Message ID"),
     feedback_data: MessageFeedbackUpdate = ...,
-    user_id: str = Query(..., description="User ID")
+    domain_id: str = Query(..., description="Domain ID")
 ):
     """
-    Update message feedback (like/dislike/text)
+    Update message feedback (like/dislike/text) by message ID - Using POST method for consistency
     
     - **conversation_id**: ID of the conversation
     - **message_id**: ID of the message to update
-    - **user_id**: ID of the user updating the feedback
+    - **domain_id**: ID of the domain updating the feedback
     - **liked**: Feedback value (-1=dislike, 0=neutral, 1=like)
     - **feedback_text**: Optional feedback text
     """
     try:
         success = await conversation_service.update_message_feedback(
-            conversation_id, message_id, user_id, feedback_data.liked, feedback_data.feedback_text
+            conversation_id, message_id, domain_id, feedback_data.liked, feedback_data.feedback_text
         )
         
         if not success:
@@ -297,13 +308,74 @@ async def update_message_feedback(
         logger.error(f"Failed to update message feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update feedback: {str(e)}")
 
+@router.post("/conversations/{conversation_id}/chat/{chat_id}/feedback")
+async def update_chat_feedback(
+    conversation_id: str = Path(..., description="Conversation ID"),
+    chat_id: str = Path(..., description="Chat bubble ID from frontend"),
+    feedback_data: MessageFeedbackUpdate = ...,
+    domain_id: str = Query(..., description="Domain ID")
+):
+    """
+    Update message feedback (like/dislike/text) by chat ID - Using POST method for consistency
+    
+    - **conversation_id**: ID of the conversation
+    - **chat_id**: Frontend chat bubble ID (e.g., 'bot-1', 'assistant-2')
+    - **domain_id**: ID of the domain updating the feedback
+    - **liked**: Feedback value (-1=dislike, 0=neutral, 1=like)
+    - **feedback_text**: Optional feedback text
+    """
+    try:
+        success = await conversation_service.update_message_feedback_by_chat_id(
+            conversation_id, chat_id, domain_id, feedback_data.liked, feedback_data.feedback_text
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Message with chat ID not found")
+        
+        return APIResponse(
+            success=True,
+            message="Feedback updated successfully",
+            data={
+                "conversation_id": conversation_id,
+                "chat_id": chat_id,
+                "liked": feedback_data.liked,
+                "feedback_text": feedback_data.feedback_text
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update chat feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update feedback: {str(e)}")
+
+# Legacy PUT endpoints for backward compatibility
+@router.put("/conversations/{conversation_id}/messages/{message_id}/feedback")
+async def update_message_feedback_legacy(
+    conversation_id: str = Path(..., description="Conversation ID"),
+    message_id: str = Path(..., description="Message ID"),
+    feedback_data: MessageFeedbackUpdate = ...,
+    domain_id: str = Query(..., description="Domain ID")
+):
+    """Legacy PUT endpoint - redirects to POST feedback for compatibility"""
+    return await update_message_feedback(conversation_id, message_id, feedback_data, domain_id)
+
+@router.put("/conversations/{conversation_id}/chat/{chat_id}/feedback")
+async def update_chat_feedback_legacy(
+    conversation_id: str = Path(..., description="Conversation ID"),
+    chat_id: str = Path(..., description="Chat bubble ID from frontend"),
+    feedback_data: MessageFeedbackUpdate = ...,
+    domain_id: str = Query(..., description="Domain ID")
+):
+    """Legacy PUT endpoint - redirects to POST feedback for compatibility"""
+    return await update_chat_feedback(conversation_id, chat_id, feedback_data, domain_id)
+
 # ================================================
 # SEARCH ENDPOINTS
 # ================================================
 
 @router.get("/conversations/search/", response_model=SearchResponse)
 async def search_conversations(
-    user_id: str = Query(..., description="User ID"),
+    domain_id: str = Query(..., description="Domain ID"),
     query: str = Query(..., description="Search query"),
     limit: int = Query(10, ge=1, le=100, description="Number of results to return"),
     offset: int = Query(0, ge=0, description="Number of results to skip")
@@ -311,7 +383,7 @@ async def search_conversations(
     """
     Search conversations by title
     
-    - **user_id**: ID of the user
+    - **domain_id**: ID of the domain
     - **query**: Search query to match against conversation titles
     - **limit**: Maximum number of results to return (1-100)
     - **offset**: Number of results to skip (for pagination)
@@ -323,7 +395,7 @@ async def search_conversations(
             return SearchResponse(conversations=[], total=0, limit=limit, offset=offset)
             
         search_request = SearchRequest(
-            user_id=user_id,
+            domain_id=domain_id,
             query=query,
             limit=limit,
             offset=offset
@@ -367,23 +439,43 @@ async def search_conversation_titles(
 # USER SESSION ENDPOINTS
 # ================================================
 
-@router.put("/conversations/session/{user_id}", response_model=UserSession)
+@router.get("/conversations/session/{domain_id}", response_model=UserSession)
+async def get_user_session(
+    domain_id: str = Path(..., description="Domain ID")
+):
+    """
+    Get current user session information
+    
+    - **domain_id**: ID of the domain
+    """
+    try:
+        session = await conversation_service.get_user_session(domain_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="User session not found")
+        return session
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get user session for {domain_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
+
+@router.put("/conversations/session/{domain_id}", response_model=UserSession)
 async def update_user_session(
-    user_id: str = Path(..., description="User ID"),
+    domain_id: str = Path(..., description="Domain ID"),
     session_data: UserSessionUpdate = ...
 ):
     """
     Update user session information
     
-    - **user_id**: ID of the user
+    - **domain_id**: ID of the domain
     - **active_conversation_id**: ID of currently active conversation
     - **metadata**: Additional session metadata
     """
     try:
-        session = await conversation_service.update_user_session(user_id, session_data)
+        session = await conversation_service.update_user_session(domain_id, session_data)
         return session
     except Exception as e:
-        logger.error(f"Failed to update user session for {user_id}: {e}")
+        logger.error(f"Failed to update user session for {domain_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
 
 # ================================================

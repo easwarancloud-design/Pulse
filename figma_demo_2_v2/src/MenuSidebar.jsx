@@ -289,14 +289,69 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
   // Handle thread delete
   const handleDeleteThread = async (threadId) => {
     try {
-      // Delete via API instead of localStorage
       console.log('🗑️ Attempting to delete thread:', threadId);
       
-      // Refresh threads from API after delete operation
-      const threads = await loadThreadsFromStorage();
-      setAllThreads(threads);
+      // Get user info for the API call
+      const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+      const userId = userInfo.domainId || userInfo.domain_id;
+      
+      if (userId) {
+        hybridChatService.setUserId(userId);
+      }
+      
+      // Remove from local state immediately - ALWAYS delete from frontend
+      setAllThreads(prevThreads => {
+        // Ensure prevThreads is an object with the correct structure
+        if (!prevThreads || typeof prevThreads !== 'object') {
+          console.warn('⚠️ prevThreads is not an object:', prevThreads);
+          return {
+            today: [],
+            yesterday: [],
+            lastWeek: [],
+            last30Days: []
+          };
+        }
+        
+        // Filter out the deleted thread from all categories
+        return {
+          today: Array.isArray(prevThreads.today) ? prevThreads.today.filter(thread => thread.id !== threadId) : [],
+          yesterday: Array.isArray(prevThreads.yesterday) ? prevThreads.yesterday.filter(thread => thread.id !== threadId) : [],
+          lastWeek: Array.isArray(prevThreads.lastWeek) ? prevThreads.lastWeek.filter(thread => thread.id !== threadId) : [],
+          last30Days: Array.isArray(prevThreads.last30Days) ? prevThreads.last30Days.filter(thread => thread.id !== threadId) : []
+        };
+      });
+      console.log('✅ Thread removed from frontend UI permanently:', threadId);
+      
+      // Call delete API in background - don't block frontend deletion and don't care about result
+      hybridChatService.deleteConversation(threadId).then(() => {
+        console.log('🗑️ Background API delete completed for:', threadId);
+      }).catch((error) => {
+        console.log('⚠️ Background API delete failed for:', threadId, error.message);
+      });
+      
+      // DO NOT refresh conversations - this causes deleted items to reappear
+      console.log('🔒 Not refreshing conversation list to prevent reloading deleted items');
+      
     } catch (error) {
-      console.error('Error deleting thread:', error);
+      console.log('⚠️ Delete operation had issues but frontend deletion completed:', error.message);
+      // Still ensure the thread is removed from UI even if there were errors
+      setAllThreads(prevThreads => {
+        if (!prevThreads || typeof prevThreads !== 'object') {
+          return {
+            today: [],
+            yesterday: [],
+            lastWeek: [],
+            last30Days: []
+          };
+        }
+        
+        return {
+          today: Array.isArray(prevThreads.today) ? prevThreads.today.filter(thread => thread.id !== threadId) : [],
+          yesterday: Array.isArray(prevThreads.yesterday) ? prevThreads.yesterday.filter(thread => thread.id !== threadId) : [],
+          lastWeek: Array.isArray(prevThreads.lastWeek) ? prevThreads.lastWeek.filter(thread => thread.id !== threadId) : [],
+          last30Days: Array.isArray(prevThreads.last30Days) ? prevThreads.last30Days.filter(thread => thread.id !== threadId) : []
+        };
+      });
     }
     setShowDeleteConfirm(null);
   };

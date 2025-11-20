@@ -9,7 +9,7 @@ export const API_BASE_URLS = {
   SERVICE_NOW: 'https://elevancehealth.service-now.com',
   OKTA: 'https://portalssoqa.elevancehealth.com',
   // Use local FastAPI server for conversation storage (for development)
-  LOCAL_CONVERSATION_API: 'http://localhost:8000',
+  LOCAL_CONVERSATION_API: 'https://workforceagent.elevancehealth.com',
 };
 
 // API Endpoints
@@ -24,6 +24,7 @@ export const API_ENDPOINTS = {
   // Local Conversation API endpoints
   CONVERSATIONS: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations`,
   CONVERSATION_BY_ID: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}`,
+  CONVERSATION_DELETE: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/delete`,
   CONVERSATION_MESSAGES: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages`,
   CONVERSATION_MESSAGES_BULK: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages/bulk`,
   CONVERSATION_SEARCH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/search`,

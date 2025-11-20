@@ -66,6 +66,7 @@ class Message(TimestampMixin):
     """Message data model"""
     id: Optional[str] = None
     conversation_id: str
+    chat_id: Optional[str] = Field(None, description="Frontend chat bubble ID for feedback mapping")
     message_type: MessageType
     content: str = Field(..., description="Message content")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional message metadata")
@@ -88,6 +89,7 @@ class Message(TimestampMixin):
 
 class MessageCreate(BaseModel):
     """Create message request"""
+    chat_id: Optional[str] = Field(None, description="Frontend chat bubble ID for feedback mapping")
     message_type: MessageType
     content: str = Field(..., description="Message content")
     metadata: Optional[Dict[str, Any]] = None
@@ -108,7 +110,7 @@ class MessageResponse(Message):
 class Conversation(TimestampMixin):
     """Conversation data model"""
     id: Optional[str] = None
-    user_id: str = Field(..., description="User ID who owns the conversation")
+    domain_id: str = Field(..., description="Domain ID of the user who owns the conversation")
     title: str = Field(..., description="Conversation title")
     summary: Optional[str] = Field(None, description="Conversation summary")
     status: ConversationStatus = ConversationStatus.ACTIVE
@@ -130,7 +132,7 @@ class Conversation(TimestampMixin):
 
 class ConversationCreate(BaseModel):
     """Create conversation request"""
-    user_id: str = Field(..., description="User ID who owns the conversation")
+    domain_id: str = Field(..., description="Domain ID of the user who owns the conversation")
     title: str = Field(..., description="Conversation title")
     summary: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -161,7 +163,7 @@ class ConversationResponse(Conversation):
 class ConversationSummary(BaseModel):
     """Conversation summary for list views"""
     id: str
-    user_id: str
+    domain_id: str
     title: str
     summary: Optional[str] = None
     status: ConversationStatus
@@ -178,7 +180,7 @@ class ConversationSummary(BaseModel):
 # Search Models
 class SearchRequest(BaseModel):
     """Search conversations request"""
-    user_id: str
+    domain_id: str
     query: str = Field(..., description="Search query")
     limit: Optional[int] = Field(10, ge=1, le=100, description="Number of results to return")
     offset: Optional[int] = Field(0, ge=0, description="Number of results to skip")
@@ -195,7 +197,7 @@ class SearchResponse(BaseModel):
 # User Session Models
 class UserSession(BaseModel):
     """User session data model"""
-    user_id: str
+    domain_id: str
     session_id: Optional[str] = None
     last_activity: Optional[datetime] = None
     active_conversation_id: Optional[str] = None

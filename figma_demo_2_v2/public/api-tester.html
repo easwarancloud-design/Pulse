@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Endpoint Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .test-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button.danger {
+            background: #dc3545;
+        }
+        
+        button.success {
+            background: #28a745;
+        }
+        
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .warning { color: #ffc107; }
+        .info { color: #17a2b8; }
+        
+        input[type="text"] {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        .config {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 API Endpoint Tester</h1>
+        
+        <div class="config">
+            <h3>Configuration</h3>
+            <label>Base URL: <input type="text" id="baseURL" value="https://workforceagent.elevancehealth.com"></label>
+            <label>User ID: <input type="text" id="userID" value="AG04333"></label>
+            <button onclick="updateConfig()">Update Config</button>
+        </div>
+
+        <div class="test-section">
+            <h3>🏥 Health Check</h3>
+            <button onclick="testHealthCheck()">Test Health Check</button>
+            <p>Tests if the conversation API is running and responding</p>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Create Conversation</h3>
+            <label>Title: <input type="text" id="convTitle" value="Test Conversation"></label>
+            <button onclick="testCreateConversation()">Create Conversation</button>
+            <p>Creates a new conversation and stores the ID for other tests</p>
+        </div>
+
+        <div class="test-section">
+            <h3>📖 Get Conversation</h3>
+            <label>Conversation ID: <input type="text" id="getConvId" placeholder="Will auto-fill after creation"></label>
+            <button onclick="testGetConversation()">Get Conversation</button>
+            <button onclick="useCreatedConversation()">Use Created Conversation ID</button>
+        </div>
+
+        <div class="test-section">
+            <h3>✏️ Update Conversation</h3>
+            <label>New Title: <input type="text" id="updateTitle" value="Updated Test Conversation"></label>
+            <button onclick="testUpdateConversation()">Update Conversation</button>
+        </div>
+
+        <div class="test-section">
+            <h3>💬 Add Message</h3>
+            <label>Message Type: 
+                <select id="messageType">
+                    <option value="user">User</option>
+                    <option value="assistant">Assistant</option>
+                    <option value="system">System</option>
+                </select>
+            </label>
+            <br>
+            <textarea id="messageContent" placeholder="Enter message content here">This is a test message from API tester</textarea>
+            <button onclick="testAddMessage()">Add Message</button>
+        </div>
+
+        <div class="test-section">
+            <h3>👍 Update Message Feedback</h3>
+            <label>Message ID: <input type="text" id="feedbackMessageId" placeholder="Will auto-fill after message creation"></label>
+            <label>Feedback: 
+                <select id="feedbackType">
+                    <option value="1">Like (1)</option>
+                    <option value="0">Neutral (0)</option>
+                    <option value="-1">Dislike (-1)</option>
+                </select>
+            </label>
+            <br>
+            <textarea id="feedbackText" placeholder="Optional feedback text">Great response!</textarea>
+            <button onclick="testUpdateFeedback()">Update Feedback</button>
+        </div>
+
+        <div class="test-section">
+            <h3>🏠 Local Conversation Test</h3>
+            <button onclick="testLocalConversation()">Test Local Conversation (Should Fail)</button>
+            <p>Tests that local conversation IDs are properly rejected by backend</p>
+        </div>
+
+        <div class="test-section">
+            <h3>📋 Get User Conversations</h3>
+            <button onclick="testGetUserConversations()">Get User Conversations</button>
+        </div>
+
+        <div class="test-section">
+            <h3>🔍 Search Conversations</h3>
+            <label>Search Query: <input type="text" id="searchQuery" value="test"></label>
+            <button onclick="testSearchConversations()">Search Conversations</button>
+        </div>
+
+        <div class="test-section">
+            <h3>🗑️ Delete Test Data</h3>
+            <button class="danger" onclick="testDeleteConversation()">Delete Test Conversation</button>
+        </div>
+
+        <div class="test-section">
+            <h3>⚡ Quick Actions</h3>
+            <button class="success" onclick="runFullTest()">Run Full Test Suite</button>
+            <button onclick="clearLog()">Clear Log</button>
+            <button onclick="exportLog()">Export Log</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h3>📊 Test Log</h3>
+        <div id="log" class="log">Ready to test APIs...\n</div>
+    </div>
+
+    <script>
+        // Configuration
+        let config = {
+            baseURL: 'https://workforceagent.elevancehealth.com',
+            userID: 'AG04333',
+            testConversationId: null,
+            testMessageId: null
+        };
+
+        // API Endpoints
+        const API_ENDPOINTS = {
+            CONVERSATION_HEALTH: () => `${config.baseURL}/api/conversations/health?user_id=${config.userID}`,
+            CONVERSATIONS: () => `${config.baseURL}/api/conversations`,
+            CONVERSATION_BY_ID: (id) => `${config.baseURL}/api/conversations/${id}`,
+            CONVERSATION_MESSAGES: (id) => `${config.baseURL}/api/conversations/${id}/messages`,
+            CONVERSATION_SEARCH: () => `${config.baseURL}/api/conversations/search`,
+            USER_CONVERSATIONS: () => `${config.baseURL}/api/conversations/user/${config.userID}`,
+            MESSAGE_FEEDBACK: (convId, msgId) => `${config.baseURL}/api/conversations/${convId}/messages/${msgId}/feedback`
+        };
+
+        // Logging
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('log');
+            const colorClass = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info';
+            logElement.innerHTML += `<span class="${colorClass}">[${timestamp}] ${type.toUpperCase()}: ${message}</span>\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = 'Log cleared...\n';
+        }
+
+        function exportLog() {
+            const logContent = document.getElementById('log').textContent;
+            const blob = new Blob([logContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `api-test-log-${Date.now()}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Configuration
+        function updateConfig() {
+            config.baseURL = document.getElementById('baseURL').value;
+            config.userID = document.getElementById('userID').value;
+            log(`Updated config: ${config.baseURL}, User: ${config.userID}`, 'info');
+        }
+
+        // API Testing Functions
+        async function makeRequest(url, method = 'GET', payload = null) {
+            try {
+                log(`Making ${method} request to: ${url}`, 'info');
+                
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+
+                if (payload && method !== 'GET') {
+                    options.body = JSON.stringify(payload);
+                    log(`Request payload: ${JSON.stringify(payload, null, 2)}`, 'info');
+                }
+
+                const response = await fetch(url, options);
+                const responseText = await response.text();
+                
+                let responseData;
+                try {
+                    responseData = JSON.parse(responseText);
+                } catch {
+                    responseData = responseText;
+                }
+
+                log(`Response Status: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+                log(`Response Data: ${JSON.stringify(responseData, null, 2)}`, response.ok ? 'success' : 'error');
+
+                return { success: response.ok, status: response.status, data: responseData };
+            } catch (error) {
+                log(`Request failed: ${error.message}`, 'error');
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function testHealthCheck() {
+            log('Testing Health Check...', 'info');
+            const result = await makeRequest(API_ENDPOINTS.CONVERSATION_HEALTH());
+            return result;
+        }
+
+        async function testCreateConversation() {
+            const title = document.getElementById('convTitle').value || 'Test Conversation';
+            log('Testing Create Conversation...', 'info');
+            
+            const payload = {
+                title: `${title} - ${new Date().toISOString()}`,
+                summary: 'Test conversation created by API tester',
+                metadata: { test: true, created_at: new Date().toISOString() }
+            };
+
+            const url = `${API_ENDPOINTS.CONVERSATIONS()}?user_id=${config.userID}`;
+            const result = await makeRequest(url, 'POST', payload);
+            
+            if (result.success && result.data.id) {
+                config.testConversationId = result.data.id;
+                document.getElementById('getConvId').value = config.testConversationId;
+                log(`Saved conversation ID for testing: ${config.testConversationId}`, 'success');
+            }
+            
+            return result;
+        }
+
+        async function testGetConversation() {
+            const conversationId = document.getElementById('getConvId').value || config.testConversationId;
+            
+            if (!conversationId) {
+                log('No conversation ID provided. Create a conversation first.', 'warning');
+                return;
+            }
+
+            log(`Testing Get Conversation with ID: ${conversationId}`, 'info');
+            const url = `${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?user_id=${config.userID}`;
+            return await makeRequest(url, 'GET');
+        }
+
+        async function testUpdateConversation() {
+            const conversationId = config.testConversationId;
+            const newTitle = document.getElementById('updateTitle').value;
+            
+            if (!conversationId) {
+                log('No conversation ID available. Create a conversation first.', 'warning');
+                return;
+            }
+
+            log('Testing Update Conversation...', 'info');
+            
+            const payload = {
+                title: `${newTitle} - ${new Date().toISOString()}`,
+                summary: 'Updated by API tester',
+                metadata: { test: true, updated_at: new Date().toISOString() }
+            };
+
+            const url = `${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?user_id=${config.userID}`;
+            return await makeRequest(url, 'PUT', payload);
+        }
+
+        async function testAddMessage() {
+            const conversationId = config.testConversationId;
+            const messageType = document.getElementById('messageType').value;
+            const content = document.getElementById('messageContent').value;
+            
+            if (!conversationId) {
+                log('No conversation ID available. Create a conversation first.', 'warning');
+                return;
+            }
+
+            log('Testing Add Message...', 'info');
+            
+            const payload = {
+                message_type: messageType,
+                content: content,
+                metadata: { test: true, created_at: new Date().toISOString() },
+                reference_links: []
+            };
+
+            const url = `${API_ENDPOINTS.CONVERSATION_MESSAGES(conversationId)}?user_id=${config.userID}`;
+            const result = await makeRequest(url, 'POST', payload);
+            
+            if (result.success && result.data.id) {
+                config.testMessageId = result.data.id;
+                document.getElementById('feedbackMessageId').value = config.testMessageId;
+                log(`Saved message ID for testing: ${config.testMessageId}`, 'success');
+            }
+            
+            return result;
+        }
+
+        async function testUpdateFeedback() {
+            const conversationId = config.testConversationId;
+            const messageId = document.getElementById('feedbackMessageId').value || config.testMessageId;
+            const liked = parseInt(document.getElementById('feedbackType').value);
+            const feedbackText = document.getElementById('feedbackText').value;
+            
+            if (!conversationId || !messageId) {
+                log('Missing conversation ID or message ID. Create a message first.', 'warning');
+                return;
+            }
+
+            log('Testing Update Message Feedback...', 'info');
+            
+            const payload = {
+                liked: liked,
+                feedback_text: feedbackText || null
+            };
+
+            const url = `${API_ENDPOINTS.MESSAGE_FEEDBACK(conversationId, messageId)}?user_id=${config.userID}`;
+            return await makeRequest(url, 'PUT', payload);
+        }
+
+        async function testLocalConversation() {
+            const localId = `local_${Date.now()}`;
+            log(`Testing Local Conversation ID: ${localId} (Should fail with 404)`, 'info');
+            
+            const url = `${API_ENDPOINTS.CONVERSATION_BY_ID(localId)}?user_id=${config.userID}`;
+            const result = await makeRequest(url, 'GET');
+            
+            if (!result.success && result.status === 404) {
+                log('✅ Local conversation properly rejected with 404 - This is expected behavior!', 'success');
+            } else if (result.success) {
+                log('⚠️ Local conversation was NOT rejected - This might be an issue!', 'warning');
+            }
+            
+            return result;
+        }
+
+        async function testGetUserConversations() {
+            log('Testing Get User Conversations...', 'info');
+            const url = `${API_ENDPOINTS.USER_CONVERSATIONS()}?limit=10&offset=0`;
+            return await makeRequest(url, 'GET');
+        }
+
+        async function testSearchConversations() {
+            const query = document.getElementById('searchQuery').value || 'test';
+            log(`Testing Search Conversations with query: "${query}"`, 'info');
+            
+            const params = new URLSearchParams({
+                user_id: config.userID,
+                query: query,
+                limit: 5,
+                offset: 0
+            });
+            
+            const url = `${API_ENDPOINTS.CONVERSATION_SEARCH()}?${params}`;
+            return await makeRequest(url, 'GET');
+        }
+
+        async function testDeleteConversation() {
+            const conversationId = config.testConversationId;
+            
+            if (!conversationId) {
+                log('No test conversation to delete.', 'warning');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete conversation ${conversationId}?`)) {
+                return;
+            }
+
+            log('Testing Delete Conversation...', 'info');
+            const url = `${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?user_id=${config.userID}`;
+            const result = await makeRequest(url, 'DELETE');
+            
+            if (result.success) {
+                config.testConversationId = null;
+                config.testMessageId = null;
+                document.getElementById('getConvId').value = '';
+                document.getElementById('feedbackMessageId').value = '';
+                log('Test conversation deleted. IDs cleared.', 'success');
+            }
+            
+            return result;
+        }
+
+        function useCreatedConversation() {
+            if (config.testConversationId) {
+                document.getElementById('getConvId').value = config.testConversationId;
+                log(`Using created conversation ID: ${config.testConversationId}`, 'info');
+            } else {
+                log('No conversation created yet. Create one first.', 'warning');
+            }
+        }
+
+        async function runFullTest() {
+            log('🚀 Starting Full Test Suite...', 'info');
+            
+            const tests = [
+                { name: 'Health Check', fn: testHealthCheck },
+                { name: 'Create Conversation', fn: testCreateConversation },
+                { name: 'Get Conversation', fn: testGetConversation },
+                { name: 'Update Conversation', fn: testUpdateConversation },
+                { name: 'Add Message', fn: testAddMessage },
+                { name: 'Update Feedback', fn: testUpdateFeedback },
+                { name: 'Local Conversation Test', fn: testLocalConversation },
+                { name: 'Search Conversations', fn: testSearchConversations },
+                { name: 'Get User Conversations', fn: testGetUserConversations }
+            ];
+
+            let passed = 0;
+            let failed = 0;
+
+            for (let i = 0; i < tests.length; i++) {
+                log(`\n--- Test ${i + 1}/${tests.length}: ${tests[i].name} ---`, 'info');
+                
+                try {
+                    const result = await tests[i].fn();
+                    if (result && result.success) {
+                        passed++;
+                    } else {
+                        failed++;
+                    }
+                } catch (error) {
+                    log(`Test failed with exception: ${error.message}`, 'error');
+                    failed++;
+                }
+                
+                // Wait 1 second between tests
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            log(`\n📊 Test Suite Complete! Passed: ${passed}, Failed: ${failed}`, passed > failed ? 'success' : 'error');
+        }
+
+        // Initialize
+        log('API Tester loaded. Ready to test endpoints!', 'success');
+        log(`Base URL: ${config.baseURL}`, 'info');
+        log(`User ID: ${config.userID}`, 'info');
+    </script>
+</body>
+</html>

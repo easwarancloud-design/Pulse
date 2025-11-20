@@ -158,14 +158,14 @@ class RedisKeys:
     """Redis key patterns for conversation storage"""
     
     @staticmethod
-    def user_conversations(user_id: str) -> str:
-        """Key for user's conversation list"""
-        return f"user:{user_id}:conversations"
+    def user_conversations(domain_id: str) -> str:
+        """Key for domain's conversation list"""
+        return f"domain:{domain_id}:conversations"
     
     @staticmethod
-    def conversation_titles(user_id: str) -> str:
-        """Key for user's conversation titles (for search)"""
-        return f"user:{user_id}:titles"
+    def conversation_titles(domain_id: str) -> str:
+        """Key for domain's conversation titles (for search)"""
+        return f"domain:{domain_id}:titles"
     
     @staticmethod
     def conversation_cache(conversation_id: str) -> str:
@@ -178,14 +178,14 @@ class RedisKeys:
         return f"conversation:{conversation_id}:messages"
     
     @staticmethod
-    def user_session(user_id: str) -> str:
-        """Key for user session activity"""
-        return f"user:{user_id}:session"
+    def user_session(domain_id: str) -> str:
+        """Key for domain session activity"""
+        return f"domain:{domain_id}:session"
     
     @staticmethod
-    def user_activity(user_id: str) -> str:
-        """Key for user activity tracking"""
-        return f"user:{user_id}:activity"
+    def user_activity(domain_id: str) -> str:
+        """Key for domain activity tracking"""
+        return f"domain:{domain_id}:activity"
     
     @staticmethod
     def message_feedback(conversation_id: str, message_id: str) -> str:
@@ -193,6 +193,6 @@ class RedisKeys:
         return f"conversation:{conversation_id}:message:{message_id}:feedback"
     
     @staticmethod
-    def search_results(user_id: str, query: str) -> str:
+    def search_results(domain_id: str, query: str) -> str:
         """Key for search results cache"""
-        return f"user:{user_id}:search:{query}"
+        return f"domain:{domain_id}:search:{query}"

@@ -140,8 +140,7 @@ function CHATBOT({ user, mode }) {
   if (mode !== 'admin') {
     if (user?.domainid) {
       setDomainid(user.domainid);
-    } else { console.log( "⚠️ You are not logged in, please refresh and try again.");
-    //  setMessages(prev => [
+    } else { //  setMessages(prev => [
      //   ...prev,
       //  { text: "⚠️ You are not logged in, please refresh and try again.", sender: 'bot' }
       //]);
@@ -213,7 +212,6 @@ function CHATBOT({ user, mode }) {
 
  useEffect(() => {
     if (mode === 'admin') {
-      console.log('admin mode domainid:', domainid);
       // const storedDomain = localStorage.getItem('domainid');
       // if (storedDomain) setDomainid(storedDomain);
     } else {
@@ -227,9 +225,7 @@ function CHATBOT({ user, mode }) {
          //localStorage.setItem('sessionid', newsessionid);
          //setSessionid(newsessionid);
         }
-        //console.log('current user session id:', sessionid);
-
-            // Trigger welcome message only once
+        // Trigger welcome message only once
       if (!hasWelcomed && user.domainID) {
         sendDomainid(user.domainID);
         setHasWelcomed(true);
@@ -244,8 +240,7 @@ function CHATBOT({ user, mode }) {
     if (!localStorage.getItem('session_id')) {
       const sessionId = generateSessionId();
       localStorage.setItem('session_id', sessionId);
-      console.log('Session started:', sessionId);
-    }
+      }
   }, []);
 
 */
@@ -295,7 +290,6 @@ function CHATBOT({ user, mode }) {
       const currentTimestamp = Date.now();
       postResponse(domainid, "None", `[SYSTEM] User selected agent name [${groupName}]`, 0,uuidv4(),"agent");
       postResponse(domainid, "None", "[SYSTEM] Connecting to a live agent, please hold…", 0,uuidv4(),"agent");
-      console.log(`[SYSTEM] User selected agent name ${groupName}`);
       const payload = {
         requestId,
         token: "vaacubed",
@@ -317,8 +311,6 @@ function CHATBOT({ user, mode }) {
           name: groupName
         }
       };
-
-      console.log("payload:", payload);
 
       try {
 
@@ -620,7 +612,6 @@ function CHATBOT({ user, mode }) {
       if (done) break;
 
       const chunk = decoder.decode(value, { stream: true });
-      console.log('chunk:',chunk);
       if (chunk.includes("<<LiveAgent>>")) {
         setShowConfirm(false);
         setIsInputDisabled(true);
@@ -1240,7 +1231,6 @@ const sendMessage_original = async () => {
   //const session_id =  Date.now().toString();  // Ensure sessionTime is set
   const question_text = input;
   const DomainId=localStorage.getItem('domainid', '');
-  console.log('question:',input);
   setMessages(prev => [...prev, { sender: "user", text: input, time: new Date().toISOString()
 }]);
   setInput("");
@@ -1651,46 +1641,36 @@ const renderLiveAgentMessage = (text, isFirst, agentName) => (
     if (!liveAgent || chatEnded) return;
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
-      console.log("🕒 WebSocket idle for 19 minutes. Ending session...");
       postResponse(domainid, "None", "[SYSTEM] Live agent chat ended due to inactivity.", 0,uuidv4(),"agent");
       terminateSession("Live agent chat ended due to inactivity.");
     }, INACTIVITY_LIMIT);
   };
 
   socket.onopen = () => {
-    console.log("✅ WebSocket connected");
     resetInactivityTimer();
   };
 
   socket.onmessage = (event) => {
     try {
-      console.log("📩 Raw message received:", event.data);
       const msg = JSON.parse(event.data);
       const text = msg?.text?.toLowerCase() || "";
-      console.log("📩 text:", msg.text);
-      console.log("👤 agent name:", msg.agentName);
       console.log('lowercase text:',text)
 
       resetInactivityTimer();
 
 
       if (text.includes("[system]")) {
-        console.log("🔚 System message");
         return;
       }
       else  if (text.includes("your chat with the live agent has ended")) {
-        console.log("🔚 Detected live agent chat closure");
         postResponse(domainid, "None", "[SYSTEM] Disconnected from the live agent.", 0,uuidv4(),"agent");
         terminateSession("Disconnected from the live agent.");
 
       } else if (text.includes("there are no agents available at the moment")) {
-        console.log("🔚 No agents available");
-
         postResponse(domainid, "None", "[SYSTEM] No agents available. Ending session.", 0, uuidv4(), "agent");
         terminateSession("Disconnected. No agents are available at the moment. Please try again later.");
       }
       else {
-        console.log("🔚 chat message print");
         postResponse(domainid, "", msg.text, 0, uuidv4(),"agent");
         setMessages(prev => {
           const isFirstLiveMessage = !prev.some(m => m.sender === "live_agent");
@@ -1710,7 +1690,6 @@ const renderLiveAgentMessage = (text, isFirst, agentName) => (
     }
   };
   socket.onclose = () => {
-    console.log("🔌 WebSocket closed");
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
     socketRef.current = null;
@@ -1731,23 +1710,18 @@ const socket = new WebSocket(`wss://workforceagent.elevancehealth.com/ws/${id}`)
     if (!liveAgent || chatEnded) return;
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
-      console.log("🕒 WebSocket idle for 19 minutes. Ending session...");
       postResponse(domainid, "None", "[SYSTEM] Live agent chat ended due to inactivity.", 0, uuidv4(), "agent");
       terminateSession("Live agent chat ended due to inactivity.");
     }, INACTIVITY_LIMIT);
   };
 
   socket.onopen = () => {
-    console.log("✅ WebSocket connected");
     resetInactivityTimer();
   };
 
   socket.onmessage = (event) => {
     try {
-            console.log("📩 Raw message received event data:", event.data);
-      const msg = JSON.parse(event.data);
-      console.log("📩 Raw message received json msg:", msg);
-
+            const msg = JSON.parse(event.data);
       const systemText = msg?.message?.text || "";
       const body = msg?.body || [];
       const completed = msg?.completed === true;
@@ -1756,7 +1730,6 @@ const socket = new WebSocket(`wss://workforceagent.elevancehealth.com/ws/${id}`)
 
       // Terminate if completed
       if (completed) {
-        console.log("🔚 Session marked as completed");
         postResponse(domainid, "None", "[SYSTEM] Live agent session ended.", 0, uuidv4(), "agent");
         terminateSession("Live agent session ended.");
         return;
@@ -1768,14 +1741,12 @@ const socket = new WebSocket(`wss://workforceagent.elevancehealth.com/ws/${id}`)
 
       // Handle known system messages
       if (text.includes("no agents available")) {
-        console.log("🔚 No agents available");
         postResponse(domainid, "None", "[SYSTEM] No agents available. Ending session.", 0, uuidv4(), "agent");
         terminateSession("Disconnected. No agents are available at the moment. Please try again later.");
         return;
       }
 
       if (text.includes("please try again later")) {
-        console.log("🔚 Retry message");
         postResponse(domainid, "None", `[SYSTEM] ${outputText.value}`, 0, uuidv4(), "agent");
         terminateSession("Live agent unavailable. Please try again later.");
         return;
@@ -1795,8 +1766,7 @@ const socket = new WebSocket(`wss://workforceagent.elevancehealth.com/ws/${id}`)
           }
         ]);
       } else {
-        console.log("ℹ️ No actionable message in body");
-      }
+        }
 
     } catch (err) {
       console.error("🚨 Failed to parse WebSocket message:", err);
@@ -1806,7 +1776,6 @@ const socket = new WebSocket(`wss://workforceagent.elevancehealth.com/ws/${id}`)
   };
 
   socket.onclose = () => {
-    console.log("🔌 WebSocket closed");
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
     socketRef.current = null;
@@ -1837,23 +1806,18 @@ socket.onerror = (e) => {
     if (!liveAgent || chatEnded) return;
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
-      console.log("🕒 WebSocket idle for 19 minutes. Ending session...");
       postResponse(domainid, "None", "[SYSTEM] Live agent chat ended due to inactivity.", 0, uuidv4(), "agent");
       terminateSession("Live agent chat ended due to inactivity.");
     }, INACTIVITY_LIMIT);
   };
 
   socket.onopen = () => {
-    console.log("✅ WebSocket connected");
     resetInactivityTimer();
   };
 
   socket.onmessage = (event) => {
     try {
-      console.log("📩 Raw message received event data:", event.data);
       const msg = JSON.parse(event.data);
-      console.log("📩 Raw message received json msg:", msg);
-
       const systemText = msg?.message?.text || "";
       const body = msg?.body || [];
       const completed = msg?.completed === true;
@@ -1861,7 +1825,6 @@ socket.onerror = (e) => {
       resetInactivityTimer();
 
       if (completed) {
-        console.log("🔚 Session marked as completed");
         postResponse(domainid, "None", "[SYSTEM] Live agent session ended.", 0, uuidv4(), "agent");
         terminateSession("Live agent session ended.");
         return;
@@ -1876,7 +1839,6 @@ socket.onerror = (e) => {
       );
 
       if (waitTimeMsg) {
-        console.log(`⏳ Estimated wait time: ${waitTimeMsg.waitTime}`);
         setMessages(prev => [
           ...prev,
           {
@@ -1896,7 +1858,6 @@ socket.onerror = (e) => {
 
       // Handle known system messages
       if (text.includes("no agents available")) {
-        console.log("🔚 No agents available");
         postResponse(domainid, "None", "[SYSTEM] No agents available. Ending session.", 0, uuidv4(), "agent");
         // terminateSession("Disconnected. No agents are available at the moment. Please try again later.");
         setMessages(prev => [
@@ -1924,7 +1885,6 @@ socket.onerror = (e) => {
       }
 
       if (text.includes("please try again later")) {
-        console.log("🔚 Retry message");
         postResponse(domainid, "None", `[SYSTEM] ${outputText.value}`, 0, uuidv4(), "agent");
         // terminateSession("Live agent unavailable. Please try again later.");
         setMessages(prev => [
@@ -1966,8 +1926,7 @@ socket.onerror = (e) => {
           }
         ]);
       } else {
-        console.log(" No actionable message in body");
-      }
+        }
 
     } catch (err) {
       console.error("Failed to parse WebSocket message:", err);
@@ -1977,7 +1936,6 @@ socket.onerror = (e) => {
   };
 
   socket.onclose = () => {
-    console.log("🔌 WebSocket closed");
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
     socketRef.current = null;
@@ -2001,23 +1959,18 @@ const connectWebSocket = (id) => {
     if (!liveAgent || chatEnded) return;
     clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => {
-      console.log("🕒 WebSocket idle for 19 minutes. Ending session...");
       postResponse(domainid, "None", "[SYSTEM] Live agent chat ended due to inactivity.", 0, uuidv4(), "agent");
       terminateSession("Live agent chat ended due to inactivity.");
     }, INACTIVITY_LIMIT);
   };
 
   socket.onopen = () => {
-    console.log("✅ WebSocket connected");
     resetInactivityTimer();
   };
 
   socket.onmessage = (event) => {
     try {
-      console.log("📩 Raw message received event data:", event.data);
       const msg = JSON.parse(event.data);
-      console.log("📩 Raw message received json msg:", msg);
-
       const systemText = msg?.message?.text || "";
       const body = msg?.body || [];
       const completed = msg?.completed === true;
@@ -2025,7 +1978,6 @@ const connectWebSocket = (id) => {
       resetInactivityTimer();
 
       if (completed) {
-        console.log("🔚 Session marked as completed");
         postResponse(domainid, "None", "[SYSTEM] Live agent session ended.", 0, uuidv4(), "agent");
         terminateSession("Live agent session ended.");
         return;
@@ -2040,7 +1992,6 @@ const connectWebSocket = (id) => {
       );
 
       if (waitTimeMsg) {
-        console.log(`⏳ Estimated wait time: ${waitTimeMsg.waitTime}`);
         postResponse(domainid, "None",`Connecting to a live agent. Estimated wait time: ${waitTimeMsg.waitTime}`, 0, uuidv4(), "agent");
         setMessages(prev => [
           ...prev,
@@ -2076,7 +2027,6 @@ const connectWebSocket = (id) => {
 
       // Handle known system messages
       if (text.includes("no agents available")) {
-        console.log("🔚 No agents available");
         postResponse(domainid, "None", "[SYSTEM] No agents available. Ending session.", 0, uuidv4(), "agent");
         // terminateSession("Disconnected. No agents are available at the moment. Please try again later.");
         setMessages(prev => [
@@ -2104,7 +2054,6 @@ const connectWebSocket = (id) => {
       }
 
       if (text.includes("please try again later")) {
-        console.log("🔚 Retry message");
         postResponse(domainid, "None", `[SYSTEM] ${outputText.value}`, 0, uuidv4(), "agent");
         // terminateSession("Live agent unavailable. Please try again later.");
         setMessages(prev => [
@@ -2177,8 +2126,7 @@ const connectWebSocket = (id) => {
           ]);
         }
       } else {
-        console.log(" No actionable message in body");
-      }
+        }
 
     } catch (err) {
       console.error("Failed to parse WebSocket message:", err);
@@ -2188,7 +2136,6 @@ const connectWebSocket = (id) => {
   };
 
   socket.onclose = () => {
-    console.log("🔌 WebSocket closed");
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
     socketRef.current = null;
@@ -2299,8 +2246,7 @@ useEffect(() => {
         chat_id: chat_id,
         chat_type:chat_type
       });
-      console.log('Response:', response.data);
-    } catch (error) {
+      } catch (error) {
       console.error('Error sending feedback:', error);
     }
   };
@@ -2371,8 +2317,7 @@ useEffect(() => {
             } else {
               // ✅ No more messages — stop further fetching
               hasMoreMessagesRef.current = false;
-              console.log("Reached end of chat history.");
-            }
+              }
           });
         }
       };
@@ -2397,11 +2342,7 @@ useEffect(() => {
       if (!response.ok) throw new Error('Failed to fetch history');
 
       const { chats } = await response.json();
-      console.log('chat loaded:', chats);
-
-
       if (!chats || chats.length === 0) {
-        console.log('No messages found, calling fallback...');
         hasInitialLoadRef.current = true;
         await fetchChatHistory(domainId, 0, 2);
         nextOffsetRef.current = 2;
@@ -2663,7 +2604,6 @@ useEffect(() => {
         return updated;
       });
 
-      console.log('New Messages:', newMessages);
       return newMessages;
     } catch (error) {
       console.error('Chat history error:', error);
@@ -2688,8 +2628,6 @@ useEffect(() => {
       if (!response.ok) throw new Error('Failed to fetch history');
 
       const { chats } = await response.json();
-      console.log('chat loaded:', chats);
-
       let groupNameSelected = null;
 
       const newMessages = chats.flatMap((msg) => {
@@ -2920,7 +2858,6 @@ useEffect(() => {
         return updated;
       });
 
-      console.log('New Messages:', newMessages);
       return newMessages;
     } catch (error) {
       console.error('Chat history error:', error);
@@ -2930,7 +2867,6 @@ useEffect(() => {
 
   const sendDomainid = async (overrideDomainid) => {
     /*if (inputValue.trim() === '') {
-      console.log("Domain ID is empty.");
       return '';
     }
 
@@ -3247,8 +3183,6 @@ function copyToClipboard(content) {
     const alternateBoxes = document.getElementById('alternate-text-boxes');
     const initialInputBoxes = document.getElementById('initial-input-boxes');
     const alternateInputBoxes = document.getElementById('alternate-input-boxes');
-    console.log(initialBoxes);
-
     setIsFeedbackClicked(isFeedbackClicked => !isFeedbackClicked);
 
     if (initialBoxes.style.display === 'none') {
@@ -3335,7 +3269,6 @@ const saveFeebackMessage = async () => {
       const idleInterval = setInterval(() => {
         idleRef.current += 1;
         if (idleRef.current > 900) { // 15 minutes
-          console.log("🚨 User inactive for 15 minutes");
           setShowTimeoutModal(true);
           clearInterval(idleInterval);
         }
@@ -3365,8 +3298,6 @@ const saveFeebackMessage = async () => {
       // ✅ Generate new session ID before reload
       const newSessionId = generateSessionId();
       localStorage.setItem('session_id', newSessionId);
-      console.log('New session ID after idle timeout:', newSessionId);
-
       window.location.reload();
     };*/
 
@@ -3380,7 +3311,6 @@ const IdleMonitor = ({ onIdle }) => {
       idleTimerRef.current = setInterval(() => {
         idleCounterRef.current += 1;
         if (idleCounterRef.current > 900) { // 15 minutes
-          console.log("🚨 User inactive for 15 minutes");
           setShowTimeoutModal(true);
         }
       }, 1000); // Check every second
@@ -3415,8 +3345,6 @@ const IdleMonitor = ({ onIdle }) => {
       localStorage.clear();
       const newSessionId = generateSessionId();
       localStorage.setItem('sessionid', newSessionId);
-      console.log('New session ID after idle timeout:', newSessionId);
-
       window.location.reload();
     };
 
@@ -3475,8 +3403,6 @@ const IdleMonitor = ({ onIdle }) => {
 
   const logout = async () => {
     const domainInStorage = localStorage.getItem('domainid');
-    console.log('Domain before logout:', domainInStorage);
-
     if (count === 0) {
       const partialMessage = 'logged out due to inactivity';
       setMessages(prev => [...prev, { text: partialMessage, sender: 'logout', completed: false }]);
@@ -3495,8 +3421,6 @@ const IdleMonitor = ({ onIdle }) => {
           currentColor === 'rgb(26, 54, 115)' ? 'rgb(173, 216, 230)' : 'rgb(26, 54, 115)';
       }
 
-      console.log('✅ User has been logged out due to inactivity.');
-
       // 👋 Graceful live agent session termination if active
       if (liveAgent && socketRef.current) {
         postResponse(domainid, "None", "[SYSTEM] Disconnected from the live agent due to inactivity.", 0,uuidv4(),"agent");
@@ -3507,8 +3431,7 @@ const IdleMonitor = ({ onIdle }) => {
       count = 0;
     } else {
       await delay(1000);
-      console.log('Waited 1s');
-    }
+      }
   };
 
   function toggleTextBoxes() {
@@ -3518,9 +3441,6 @@ const IdleMonitor = ({ onIdle }) => {
       const initialInputBoxes = document.getElementById('initial-input-boxes');
       const alternateInputBoxes = document.getElementById('alternate-input-boxes');
       const alternateNotificationBoxes = document.getElementById('alternate-notification-boxes');
-      console.log(initialBoxes);
-
-
       setIsFeedbackClicked(isFeedbackClicked => !isFeedbackClicked);
       //setIsSaveFeedbackClicked(isSaveFeedbackClicked => !isSaveFeedbackClicked);
 
@@ -4179,3 +4099,4 @@ const IdleMonitor = ({ onIdle }) => {
 }
 
 export default CHATBOT;
+

@@ -41,15 +41,26 @@ class ConversationService:
     
     def _map_db_to_api_conversation(self, db_row: Dict[str, Any]) -> Conversation:
         """Map database columns to API model"""
+        # Map database status to ConversationStatus enum
+        db_status = db_row.get('status', 'active')
+        if db_status == 'active':
+            status = ConversationStatus.ACTIVE
+        elif db_status == 'archived':
+            status = ConversationStatus.ARCHIVED  
+        elif db_status == 'deleted':
+            status = ConversationStatus.DELETED
+        else:
+            status = ConversationStatus.ACTIVE  # Default fallback
+            
         return Conversation(
-            id=db_row['conversation_id'],  # conversation_id -> id
-            user_id=db_row['domain_id'],   # domain_id -> user_id
+            id=db_row['id'],  # Use 'id' directly (schema uses 'id' as primary key)
+            domain_id=db_row['domain_id'],   # domain_id -> domain_id
             title=db_row['title'],
             summary=db_row.get('summary', ''),  # Default if missing
-            status=ConversationStatus.ACTIVE if not db_row.get('is_archived', False) else ConversationStatus.ARCHIVED,
+            status=status,
             metadata=json.loads(db_row.get('metadata', '{}')) if isinstance(db_row.get('metadata'), str) else (db_row.get('metadata') or {}),
             message_count=db_row.get('message_count', 0),
-            total_tokens=0,  # Not stored in current schema
+            total_tokens=db_row.get('total_tokens', 0),  # Include total_tokens from schema
             created_at=db_row['created_at'],
             updated_at=db_row['updated_at']
         )
@@ -57,10 +68,11 @@ class ConversationService:
     def _map_db_to_api_message(self, db_row: Dict[str, Any]) -> Message:
         """Map database columns to API model"""
         return Message(
-            id=str(db_row['message_id']),     # message_id -> id
+            id=str(db_row['id']),     # id -> id
             conversation_id=db_row['conversation_id'],
+            chat_id=db_row.get('chat_id'),    # Frontend chat bubble ID
             message_type=MessageType(db_row['message_type']),
-            content=db_row['message_text'],    # message_text -> content
+            content=db_row['content'],    # content -> content
             metadata=json.loads(db_row.get('metadata', '{}')) if isinstance(db_row.get('metadata'), str) else (db_row.get('metadata') or {}),
             created_at=db_row['created_at'],
             updated_at=db_row.get('updated_at', db_row['created_at']),
@@ -73,13 +85,14 @@ class ConversationService:
     def _map_api_to_db_conversation(self, conversation: Conversation) -> Dict[str, Any]:
         """Map API model to database columns"""
         return {
-            'conversation_id': conversation.id,
-            'domain_id': conversation.user_id,  # user_id -> domain_id
+            'id': conversation.id,
+            'domain_id': conversation.domain_id,  # domain_id -> domain_id
             'title': conversation.title,
             'summary': conversation.summary,  # Add missing summary field
+            'status': conversation.status.value,  # Map status enum to string
             'metadata': json.dumps(conversation.metadata) if conversation.metadata else None,
             'message_count': conversation.message_count,
-            'is_archived': conversation.status == ConversationStatus.ARCHIVED,
+            'total_tokens': conversation.total_tokens,
             'created_at': conversation.created_at,
             'updated_at': conversation.updated_at
         }
@@ -87,12 +100,13 @@ class ConversationService:
     def _map_api_to_db_message(self, message: Message) -> Dict[str, Any]:
         """Map API model to database columns"""
         return {
-            'message_id': int(message.id) if message.id.isdigit() else None,
+            'id': message.id,
             'conversation_id': message.conversation_id,
+            'chat_id': message.chat_id,  # Frontend chat bubble ID
             'message_type': message.message_type.value,
-            'message_text': message.content,  # content -> message_text
-            'original_text': message.content,  # Keep original_text same as content
+            'content': message.content,  # content -> content
             'metadata': json.dumps(message.metadata) if message.metadata else None,
+            'token_count': getattr(message, 'token_count', None),
             'created_at': message.created_at,
             'liked': getattr(message, 'liked', 0),
             'feedback_text': getattr(message, 'feedback_text', None),
@@ -110,7 +124,7 @@ class ConversationService:
         
         conversation = Conversation(
             id=conversation_id,
-            user_id=conversation_data.user_id,
+            domain_id=conversation_data.domain_id,
             title=conversation_data.title,
             summary=conversation_data.summary,
             status=ConversationStatus.ACTIVE,
@@ -127,44 +141,45 @@ class ConversationService:
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
                     INSERT INTO wl_conversations 
-                    (conversation_id, domain_id, title, summary, metadata, message_count, is_archived, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (id, domain_id, title, summary, status, metadata, message_count, total_tokens, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
-                    db_data['conversation_id'], db_data['domain_id'], db_data['title'],
-                    db_data['summary'], db_data['metadata'], db_data['message_count'], 
-                    db_data['is_archived'], db_data['created_at'], db_data['updated_at']
+                    db_data['id'], db_data['domain_id'], db_data['title'],
+                    db_data['summary'], db_data['status'], db_data['metadata'], 
+                    db_data['message_count'], db_data['total_tokens'],
+                    db_data['created_at'], db_data['updated_at']
                 ))
                 await conn.commit()
             
             # Cache in Redis with TTL
             await self._cache_conversation(conversation)
-            await self._update_user_conversations_cache(conversation.user_id, conversation)
-            await self._cache_conversation_title(conversation.user_id, conversation.id, conversation.title)
+            await self._update_user_conversations_cache(conversation.domain_id, conversation)
+            await self._cache_conversation_title(conversation.domain_id, conversation.id, conversation.title)
             
             # Update user session activity with cache refresh
-            await self._refresh_cache_expiry(conversation_id, conversation.user_id)
+            await self._refresh_cache_expiry(conversation_id, conversation.domain_id)
             
-            logger.info(f"Created conversation {conversation_id} for user {conversation.user_id}")
+            logger.info(f"Created conversation {conversation_id} for domain {conversation.domain_id}")
             return ConversationResponse(**conversation.dict(), messages=[])
             
         except Exception as e:
             logger.error(f"Failed to create conversation: {e}")
             raise
     
-    async def get_conversation(self, conversation_id: str, user_id: str) -> Optional[ConversationResponse]:
+    async def get_conversation(self, conversation_id: str, domain_id: str) -> Optional[ConversationResponse]:
         """Get conversation by ID with all messages"""
         try:
             # Try Redis cache first
             cached_conversation = await self._get_cached_conversation(conversation_id)
-            if cached_conversation and cached_conversation.user_id == user_id:
+            if cached_conversation and cached_conversation.domain_id == domain_id:
                 # Get cached messages
                 messages = await self._get_cached_messages(conversation_id)
                 # Refresh cache expiry on access
-                await self._refresh_cache_expiry(conversation_id, user_id)
+                await self._refresh_cache_expiry(conversation_id, domain_id)
                 return ConversationResponse(**cached_conversation.dict(), messages=messages)
             
             # Fallback to database
-            conversation = await self._get_conversation_from_db(conversation_id, user_id)
+            conversation = await self._get_conversation_from_db(conversation_id, domain_id)
             if not conversation:
                 return None
             
@@ -180,60 +195,72 @@ class ConversationService:
             logger.error(f"Failed to get conversation {conversation_id}: {e}")
             raise
     
-    async def update_conversation(self, conversation_id: str, user_id: str, 
+    async def update_conversation(self, conversation_id: str, domain_id: str, 
                                 update_data: ConversationUpdate) -> Optional[ConversationResponse]:
         """Update conversation"""
         try:
             # Get existing conversation
-            conversation = await self.get_conversation(conversation_id, user_id)
-            if not conversation:
+            existing_conversation = await self.get_conversation(conversation_id, domain_id)
+            if not existing_conversation:
                 return None
             
-            # Prepare update data
-            update_fields = {}
+            # Prepare update data with proper field mapping
+            update_fields = []
             update_values = []
             
             if update_data.title is not None:
-                update_fields['title'] = '%s'
+                update_fields.append("title = %s")
                 update_values.append(update_data.title)
             
             if update_data.summary is not None:
-                update_fields['summary'] = '%s'
+                update_fields.append("summary = %s") 
                 update_values.append(update_data.summary)
             
             if update_data.status is not None:
-                update_fields['status'] = '%s'
+                # Map status enum to database value
+                update_fields.append("status = %s")
                 update_values.append(update_data.status.value)
             
             if update_data.metadata is not None:
-                update_fields['metadata'] = '%s'
+                update_fields.append("metadata = %s")
                 update_values.append(json.dumps(update_data.metadata))
             
+            # Don't update if no fields to change
             if not update_fields:
-                return conversation
+                return existing_conversation
             
-            update_fields['updated_at'] = 'NOW()'
+            # Add last_message_at update instead of updated_at (since updated_at doesn't exist in remote DB)
+            update_fields.append("last_message_at = NOW()")
             
-            # Update in MySQL
-            set_clause = ', '.join([f"{field} = {value}" for field, value in update_fields.items()])
-            update_values.extend([conversation_id, user_id])
+            # Add WHERE clause parameters
+            update_values.extend([conversation_id, domain_id])
+            
+            # Update in MySQL with safe parameterized query
+            set_clause = ', '.join(update_fields)
             
             async with self.mysql() as (cursor, conn):
-                await cursor.execute(f"""
+                query = f"""
                     UPDATE wl_conversations 
                     SET {set_clause}
-                    WHERE conversation_id = %s AND domain_id = %s
-                """, update_values)
+                    WHERE id = %s AND domain_id = %s
+                """
+                await cursor.execute(query, update_values)
+                
+                # Check if any rows were affected
+                if cursor.rowcount == 0:
+                    logger.warning(f"No conversation found to update: {conversation_id} for domain {domain_id}")
+                    return None
+                    
                 await conn.commit()
             
             # Get updated conversation
-            updated_conversation = await self.get_conversation(conversation_id, user_id)
+            updated_conversation = await self.get_conversation(conversation_id, domain_id)
             
             # Update caches
             if updated_conversation:
-                await self._cache_conversation(updated_conversation)
+                await self._cache_conversation(updated_conversation.conversation)
                 if update_data.title:
-                    await self._cache_conversation_title(user_id, conversation_id, update_data.title)
+                    await self._cache_conversation_title(domain_id, conversation_id, update_data.title)
             
             logger.info(f"Updated conversation {conversation_id}")
             return updated_conversation
@@ -242,22 +269,22 @@ class ConversationService:
             logger.error(f"Failed to update conversation {conversation_id}: {e}")
             raise
     
-    async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
-        """Delete conversation (soft delete)"""
+    async def delete_conversation(self, conversation_id: str, domain_id: str) -> bool:
+        """Delete conversation (soft delete by setting status to 'deleted')"""
         try:
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
                     UPDATE wl_conversations 
-                    SET is_archived = TRUE, updated_at = NOW()
-                    WHERE conversation_id = %s AND domain_id = %s
-                """, (conversation_id, user_id))
+                    SET status = 'deleted', updated_at = NOW()
+                    WHERE id = %s AND domain_id = %s AND status != 'deleted'
+                """, (conversation_id, domain_id))
                 affected_rows = cursor.rowcount
                 await conn.commit()
             
             if affected_rows > 0:
                 # Remove from caches (commented out for now)
-                # await self._remove_conversation_from_cache(user_id, conversation_id)
-                logger.info(f"Deleted conversation {conversation_id}")
+                # await self._remove_conversation_from_cache(domain_id, conversation_id)
+                logger.info(f"Deleted conversation {conversation_id} (set status to deleted)")
                 return True
             
             return False
@@ -270,12 +297,12 @@ class ConversationService:
     # MESSAGE OPERATIONS
     # ================================================
     
-    async def add_message(self, conversation_id: str, user_id: str, 
+    async def add_message(self, conversation_id: str, domain_id: str, 
                          message_data: MessageCreate) -> Optional[MessageResponse]:
         """Add message to conversation"""
         try:
-            # Verify conversation exists and belongs to user
-            conversation = await self._get_conversation_from_db(conversation_id, user_id)
+            # Verify conversation exists and belongs to domain
+            conversation = await self._get_conversation_from_db(conversation_id, domain_id)
             if not conversation:
                 return None
             
@@ -285,6 +312,7 @@ class ConversationService:
             message = Message(
                 id=message_id,
                 conversation_id=conversation_id,
+                chat_id=message_data.chat_id,  # Include chat_id from frontend
                 message_type=message_data.message_type,
                 content=message_data.content,
                 metadata=message_data.metadata or {},
@@ -297,16 +325,14 @@ class ConversationService:
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
                     INSERT INTO wl_messages 
-                    (conversation_id, message_type, message_text, original_text, metadata, created_at, liked, feedback_text, feedback_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (id, conversation_id, chat_id, message_type, content, metadata, token_count, created_at, liked, feedback_text, feedback_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
-                    db_data['conversation_id'], db_data['message_type'], db_data['message_text'],
-                    db_data['original_text'], db_data['metadata'], db_data['created_at'],
+                    db_data['id'], db_data['conversation_id'], db_data['chat_id'], 
+                    db_data['message_type'], db_data['content'], db_data['metadata'], 
+                    db_data['token_count'], db_data['created_at'],
                     db_data['liked'], db_data['feedback_text'], db_data['feedback_at']
                 ))
-                # Get the auto-generated message_id
-                message_id = cursor.lastrowid
-                message.id = str(message_id)
                 await conn.commit()
             
             # Add reference links if provided
@@ -321,7 +347,7 @@ class ConversationService:
             
             # Update conversation cache and refresh expiry
             await self._add_message_to_cache(conversation_id, message)
-            await self._refresh_cache_expiry(conversation_id, user_id)
+            await self._refresh_cache_expiry(conversation_id, domain_id)
             
             # Note: Conversation stats are updated by database trigger
             
@@ -332,11 +358,11 @@ class ConversationService:
             logger.error(f"Failed to add message to conversation {conversation_id}: {e}")
             raise
     
-    async def bulk_add_messages(self, bulk_data: BulkMessageCreate, user_id: str) -> BulkMessageResponse:
+    async def bulk_add_messages(self, bulk_data: BulkMessageCreate, domain_id: str) -> BulkMessageResponse:
         """Add multiple messages to a conversation"""
         try:
             # Verify conversation exists
-            conversation = await self._get_conversation_from_db(bulk_data.conversation_id, user_id)
+            conversation = await self._get_conversation_from_db(bulk_data.conversation_id, domain_id)
             if not conversation:
                 raise ValueError(f"Conversation {bulk_data.conversation_id} not found")
             
@@ -345,7 +371,7 @@ class ConversationService:
             
             for message_data in bulk_data.messages:
                 try:
-                    message = await self.add_message(bulk_data.conversation_id, user_id, message_data)
+                    message = await self.add_message(bulk_data.conversation_id, domain_id, message_data)
                     if message:
                         created_messages.append(message)
                     else:
@@ -369,12 +395,12 @@ class ConversationService:
             logger.error(f"Failed to bulk add messages: {e}")
             raise
     
-    async def update_message_feedback(self, conversation_id: str, message_id: str, user_id: str, 
+    async def update_message_feedback(self, conversation_id: str, message_id: str, domain_id: str, 
                                     liked: int = 0, feedback_text: str = None) -> bool:
         """Update message feedback (like/dislike/text)"""
         try:
-            # Verify conversation belongs to user
-            conversation = await self._get_conversation_from_db(conversation_id, user_id)
+            # Verify conversation belongs to domain
+            conversation = await self._get_conversation_from_db(conversation_id, domain_id)
             if not conversation:
                 return False
             
@@ -385,7 +411,7 @@ class ConversationService:
                 await cursor.execute("""
                     UPDATE wl_messages 
                     SET liked = %s, feedback_text = %s, feedback_at = %s
-                    WHERE message_id = %s AND conversation_id = %s
+                    WHERE id = %s AND conversation_id = %s
                 """, (liked, feedback_text, now if liked != 0 or feedback_text else None, message_id, conversation_id))
                 
                 affected_rows = cursor.rowcount
@@ -395,8 +421,8 @@ class ConversationService:
                 # Update Redis cache
                 await self._update_message_feedback_in_cache(conversation_id, message_id, liked, feedback_text, now)
                 
-                # Reset expiry time on user activity
-                await self._refresh_cache_expiry(conversation_id, user_id)
+                # Reset expiry time on domain activity
+                await self._refresh_cache_expiry(conversation_id, domain_id)
                 
                 logger.info(f"Updated feedback for message {message_id} in conversation {conversation_id}")
                 return True
@@ -405,6 +431,48 @@ class ConversationService:
             
         except Exception as e:
             logger.error(f"Failed to update message feedback: {e}")
+            raise
+
+    async def update_message_feedback_by_chat_id(self, conversation_id: str, chat_id: str, domain_id: str, 
+                                                liked: int = 0, feedback_text: str = None) -> bool:
+        """Update message feedback (like/dislike/text) by chat ID"""
+        try:
+            # Verify conversation belongs to domain
+            conversation = await self._get_conversation_from_db(conversation_id, domain_id)
+            if not conversation:
+                return False
+            
+            now = datetime.utcnow()
+            
+            # Update in MySQL using chat_id
+            async with self.mysql() as (cursor, conn):
+                await cursor.execute("""
+                    UPDATE wl_messages 
+                    SET liked = %s, feedback_text = %s, feedback_at = %s
+                    WHERE chat_id = %s AND conversation_id = %s
+                """, (liked, feedback_text, now if liked != 0 or feedback_text else None, chat_id, conversation_id))
+                affected_rows = cursor.rowcount
+                
+                # Get the message_id for cache update
+                await cursor.execute("""
+                    SELECT id FROM wl_messages 
+                    WHERE chat_id = %s AND conversation_id = %s
+                """, (chat_id, conversation_id))
+                result = await cursor.fetchone()
+                message_id = str(result['id']) if result else None
+                
+                await conn.commit()
+            
+            if affected_rows > 0 and message_id:
+                # Update cache
+                await self._update_message_feedback_in_cache(conversation_id, message_id, liked, feedback_text, now)
+                logger.info(f"Updated feedback for chat_id {chat_id} (message {message_id}) in conversation {conversation_id}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to update message feedback by chat_id: {e}")
             raise
 
     # ================================================
@@ -416,7 +484,7 @@ class ConversationService:
         try:
             # Try Redis search first
             redis_results = await self._search_titles_from_redis(
-                search_request.user_id, 
+                search_request.domain_id, 
                 search_request.query, 
                 search_request.limit,
                 search_request.offset
@@ -449,28 +517,28 @@ class ConversationService:
             logger.error(f"Failed to search conversations: {e}")
             raise
     
-    async def get_user_conversations(self, user_id: str, limit: int = 20, 
+    async def get_user_conversations(self, domain_id: str, limit: int = 20, 
                                    offset: int = 0) -> List[ConversationSummary]:
-        """Get user's conversations with pagination"""
+        """Get domain's conversations with pagination"""
         try:
             # Try Redis cache first
-            cached_conversations = await self._get_user_conversations_from_cache(user_id, limit, offset)
+            cached_conversations = await self._get_user_conversations_from_cache(domain_id, limit, offset)
             if cached_conversations:
                 # Refresh cache expiry on access
-                cache_key = RedisKeys.user_conversations(user_id)
+                cache_key = RedisKeys.user_conversations(domain_id)
                 await self.redis.expire(cache_key, REDIS_TTL_SECONDS)
                 return cached_conversations
             
             # Fallback to database using correct column names
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
-                    SELECT conversation_id, domain_id, title, created_at, updated_at, 
-                           last_message_at, message_count, is_archived, metadata
+                    SELECT id, domain_id, title, summary, status, created_at, updated_at, 
+                           last_message_at, message_count, total_tokens, metadata
                     FROM wl_conversations
-                    WHERE domain_id = %s AND is_archived = FALSE
+                    WHERE domain_id = %s AND status != 'deleted'
                     ORDER BY COALESCE(last_message_at, created_at) DESC
                     LIMIT %s OFFSET %s
-                """, (user_id, limit + 50, 0))  # Get extra for caching
+                """, (domain_id, limit + 50, 0))  # Get extra for caching
                 
                 rows = await cursor.fetchall()
             
@@ -479,7 +547,7 @@ class ConversationService:
                 conv = self._map_db_to_api_conversation(row)
                 conversations.append(ConversationSummary(
                     id=conv.id,
-                    user_id=conv.user_id,
+                    domain_id=conv.domain_id,
                     title=conv.title,
                     summary=conv.summary,
                     status=conv.status,
@@ -490,7 +558,7 @@ class ConversationService:
                 ))
             
             # Cache the results with TTL
-            await self._cache_user_conversations(user_id, conversations)
+            await self._cache_user_conversations(domain_id, conversations)
             
             # Return requested slice
             return conversations[offset:offset+limit]
@@ -498,39 +566,48 @@ class ConversationService:
             return conversations
             
         except Exception as e:
-            logger.error(f"Failed to get conversations for user {user_id}: {e}")
+            logger.error(f"Failed to get conversations for domain {domain_id}: {e}")
             raise
     
     # ================================================
     # USER SESSION OPERATIONS
     # ================================================
     
-    async def update_user_session(self, user_id: str, 
+    async def update_user_session(self, domain_id: str, 
                                 session_update: UserSessionUpdate) -> UserSession:
         """Update user session"""
         try:
             now = datetime.utcnow()
             
+            # Generate session_id if not provided
+            session_id = session_update.metadata.get('session_id') if session_update.metadata else None
+            if not session_id:
+                # Import here to avoid circular dependency
+                from modules.workflow_util_session import get_session_id
+                session_id = get_session_id(domain_id)
+            
             # Update in database
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
-                    INSERT INTO wl_user_sessions (user_id, last_activity, active_conversation_id, metadata, updated_at)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO wl_user_sessions (domain_id, session_id, last_activity, active_conversation_id, metadata, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
+                    session_id = VALUES(session_id),
                     last_activity = VALUES(last_activity),
                     active_conversation_id = VALUES(active_conversation_id),
                     metadata = VALUES(metadata),
                     updated_at = VALUES(updated_at)
                 """, (
-                    user_id, now, session_update.active_conversation_id,
+                    domain_id, session_id, now, session_update.active_conversation_id,
                     json.dumps(session_update.metadata or {}), now
                 ))
                 await conn.commit()
             
             # Update Redis cache
-            session_key = RedisKeys.user_session(user_id)
+            session_key = RedisKeys.user_session(domain_id)
             session_data = {
-                'user_id': user_id,
+                'domain_id': domain_id,
+                'session_id': session_id,
                 'last_activity': now.isoformat(),
                 'active_conversation_id': session_update.active_conversation_id,
                 'metadata': json.dumps(session_update.metadata or {})
@@ -540,15 +617,57 @@ class ConversationService:
             await self.redis.expire(session_key, REDIS_TTL_SECONDS)
             
             return UserSession(
-                user_id=user_id,
+                domain_id=domain_id,
+                session_id=session_id,
                 last_activity=now,
                 active_conversation_id=session_update.active_conversation_id,
                 metadata=session_update.metadata or {}
             )
             
         except Exception as e:
-            logger.error(f"Failed to update user session for {user_id}: {e}")
+            logger.error(f"Failed to update user session for {domain_id}: {e}")
             raise
+
+    async def get_user_session(self, domain_id: str) -> Optional[UserSession]:
+        """Get current user session"""
+        try:
+            # Try Redis cache first
+            session_key = RedisKeys.user_session(domain_id)
+            cached_session = await self.redis.hgetall(session_key)
+            
+            if cached_session:
+                return UserSession(
+                    domain_id=cached_session.get('domain_id', domain_id),
+                    session_id=cached_session.get('session_id'),
+                    last_activity=datetime.fromisoformat(cached_session['last_activity']) if cached_session.get('last_activity') else None,
+                    active_conversation_id=cached_session.get('active_conversation_id'),
+                    metadata=json.loads(cached_session.get('metadata', '{}'))
+                )
+            
+            # Fallback to database
+            async with self.mysql() as (cursor, conn):
+                await cursor.execute("""
+                    SELECT domain_id, session_id, last_activity, active_conversation_id, metadata
+                    FROM wl_user_sessions 
+                    WHERE domain_id = %s
+                """, (domain_id,))
+                
+                row = await cursor.fetchone()
+                
+                if row:
+                    return UserSession(
+                        domain_id=row['domain_id'],
+                        session_id=row.get('session_id'),
+                        last_activity=row.get('last_activity'),
+                        active_conversation_id=row.get('active_conversation_id'),
+                        metadata=json.loads(row.get('metadata', '{}')) if row.get('metadata') else {}
+                    )
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get user session for {domain_id}: {e}")
+            return None
     
     # ================================================
     # PRIVATE HELPER METHODS
@@ -635,8 +754,8 @@ class ConversationService:
         except Exception as e:
             logger.warning(f"Failed to add message to cache for conversation {conversation_id}: {e}")
     
-    async def _refresh_cache_expiry(self, conversation_id: str, user_id: str):
-        """Reset expiry time to 15 minutes on user activity"""
+    async def _refresh_cache_expiry(self, conversation_id: str, domain_id: str):
+        """Reset expiry time to 15 minutes on domain activity"""
         try:
             pipe = self.redis.pipeline()
             
@@ -648,23 +767,23 @@ class ConversationService:
             msg_key = RedisKeys.conversation_messages(conversation_id)
             pipe.expire(msg_key, REDIS_TTL_SECONDS)
             
-            # Refresh user conversation list
-            user_key = RedisKeys.user_conversations(user_id)
+            # Refresh domain conversation list
+            user_key = RedisKeys.user_conversations(domain_id)
             pipe.expire(user_key, REDIS_TTL_SECONDS)
             
-            # Update user activity timestamp
-            activity_key = RedisKeys.user_activity(user_id)
+            # Update domain activity timestamp
+            activity_key = RedisKeys.user_activity(domain_id)
             pipe.setex(activity_key, REDIS_TTL_SECONDS, datetime.utcnow().isoformat())
             
             await pipe.execute()
-            logger.debug(f"Refreshed cache expiry for conversation {conversation_id} and user {user_id}")
+            logger.debug(f"Refreshed cache expiry for conversation {conversation_id} and domain {domain_id}")
         except Exception as e:
             logger.warning(f"Failed to refresh cache expiry: {e}")
     
-    async def _cache_user_conversations(self, user_id: str, conversations: List[ConversationSummary]):
-        """Cache user conversation list with TTL"""
+    async def _cache_user_conversations(self, domain_id: str, conversations: List[ConversationSummary]):
+        """Cache domain conversation list with TTL"""
         try:
-            key = RedisKeys.user_conversations(user_id)
+            key = RedisKeys.user_conversations(domain_id)
             conversations_data = []
             for conv in conversations:
                 conv_data = conv.dict()
@@ -674,14 +793,14 @@ class ConversationService:
                         conv_data[field] = conv_data[field].isoformat()
                 conversations_data.append(conv_data)
             await self.redis.setex(key, REDIS_TTL_SECONDS, json.dumps(conversations_data))
-            logger.debug(f"Cached {len(conversations)} conversations for user {user_id}")
+            logger.debug(f"Cached {len(conversations)} conversations for domain {domain_id}")
         except Exception as e:
-            logger.warning(f"Failed to cache conversations for user {user_id}: {e}")
+            logger.warning(f"Failed to cache conversations for domain {domain_id}: {e}")
     
-    async def _get_user_conversations_from_cache(self, user_id: str, limit: int, offset: int) -> Optional[List[ConversationSummary]]:
-        """Get user conversations from Redis cache"""
+    async def _get_user_conversations_from_cache(self, domain_id: str, limit: int, offset: int) -> Optional[List[ConversationSummary]]:
+        """Get domain conversations from Redis cache"""
         try:
-            key = RedisKeys.user_conversations(user_id)
+            key = RedisKeys.user_conversations(domain_id)
             data = await self.redis.get(key)
             if data:
                 conversations_data = json.loads(data)
@@ -696,21 +815,21 @@ class ConversationService:
                 return conversations[offset:offset+limit]
             return None
         except Exception as e:
-            logger.warning(f"Failed to get cached conversations for user {user_id}: {e}")
+            logger.warning(f"Failed to get cached conversations for domain {domain_id}: {e}")
             return None
     
-    async def _update_user_conversations_cache(self, user_id: str, new_conversation: Conversation):
-        """Update user conversations cache with new conversation"""
+    async def _update_user_conversations_cache(self, domain_id: str, new_conversation: Conversation):
+        """Update domain conversations cache with new conversation"""
         try:
             # Get current cached conversations
-            cached_conversations = await self._get_user_conversations_from_cache(user_id, 100, 0)  # Get all cached
+            cached_conversations = await self._get_user_conversations_from_cache(domain_id, 100, 0)  # Get all cached
             if cached_conversations is None:
                 cached_conversations = []
             
             # Add new conversation at the beginning
             new_summary = ConversationSummary(
                 id=new_conversation.id,
-                user_id=new_conversation.user_id,
+                domain_id=new_conversation.domain_id,
                 title=new_conversation.title,
                 summary=new_conversation.summary,
                 status=new_conversation.status,
@@ -725,8 +844,8 @@ class ConversationService:
             cached_conversations = cached_conversations[:50]
             
             # Re-cache
-            await self._cache_user_conversations(user_id, cached_conversations)
-            logger.debug(f"Updated user conversations cache for user {user_id}")
+            await self._cache_user_conversations(domain_id, cached_conversations)
+            logger.debug(f"Updated user conversations cache for domain {domain_id}")
         except Exception as e:
             logger.warning(f"Failed to update user conversations cache: {e}")
     
@@ -761,10 +880,10 @@ class ConversationService:
         except Exception as e:
             logger.warning(f"Failed to update message feedback in cache: {e}")
     
-    async def _cache_conversation_title(self, user_id: str, conversation_id: str, title: str):
+    async def _cache_conversation_title(self, domain_id: str, conversation_id: str, title: str):
         """Cache conversation title for search"""
         try:
-            key = RedisKeys.conversation_titles(user_id)
+            key = RedisKeys.conversation_titles(domain_id)
             timestamp = datetime.utcnow().timestamp()
             await self.redis.hset(key, conversation_id, json.dumps({
                 'title': title,
@@ -774,10 +893,10 @@ class ConversationService:
         except Exception as e:
             logger.warning(f"Failed to cache title for conversation {conversation_id}: {e}")
     
-    async def _search_titles_from_redis(self, user_id: str, query: str, limit: int, offset: int) -> List[ConversationSummary]:
+    async def _search_titles_from_redis(self, domain_id: str, query: str, limit: int, offset: int) -> List[ConversationSummary]:
         """Search conversation titles from Redis cache"""
         try:
-            key = RedisKeys.conversation_titles(user_id)
+            key = RedisKeys.conversation_titles(domain_id)
             all_titles = await self.redis.hgetall(key)
             
             if not all_titles:
@@ -806,10 +925,10 @@ class ConversationService:
             for match in paginated_matches:
                 # Get full conversation from cache if available (commented out for now)
                 # conversation = await self._get_cached_conversation(match['id'])
-                # if conversation and conversation.user_id == user_id:
+                # if conversation and conversation.domain_id == domain_id:
                 #     results.append(ConversationSummary(
                 #         id=conversation.id,
-                #         user_id=conversation.user_id,
+                #         domain_id=conversation.domain_id,
                 #         title=conversation.title,
                 #         summary=conversation.summary,
                 #         status=conversation.status,
@@ -828,16 +947,16 @@ class ConversationService:
             logger.warning(f"Failed to search titles from Redis: {e}")
             return []
     
-    async def _get_conversation_from_db(self, conversation_id: str, user_id: str) -> Optional[Conversation]:
+    async def _get_conversation_from_db(self, conversation_id: str, domain_id: str) -> Optional[Conversation]:
         """Get conversation from database"""
         try:
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
-                    SELECT conversation_id, domain_id, title, summary, metadata, message_count, 
-                           is_archived, created_at, updated_at
+                    SELECT id, domain_id, title, summary, status, metadata, message_count, 
+                           total_tokens, created_at, updated_at
                     FROM wl_conversations 
-                    WHERE conversation_id = %s AND domain_id = %s AND NOT is_archived
-                """, (conversation_id, user_id))
+                    WHERE id = %s AND domain_id = %s AND status != 'deleted'
+                """, (conversation_id, domain_id))
                 
                 row = await cursor.fetchone()
                 
@@ -854,8 +973,8 @@ class ConversationService:
         try:
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
-                    SELECT message_id, conversation_id, message_type, message_text, original_text,
-                           metadata, created_at, updated_at, liked, feedback_text, feedback_at
+                    SELECT id, conversation_id, chat_id, message_type, content,
+                           metadata, token_count, created_at, updated_at, liked, feedback_text, feedback_at
                     FROM wl_messages
                     WHERE conversation_id = %s
                     ORDER BY created_at ASC
@@ -882,10 +1001,10 @@ class ConversationService:
                 await cursor.execute("""
                     SELECT COUNT(*) as total
                     FROM wl_conversations
-                    WHERE domain_id = %s AND NOT is_archived
+                    WHERE domain_id = %s AND status != 'deleted'
                     AND (title LIKE %s OR summary LIKE %s)
                 """, (
-                    search_request.user_id,
+                    search_request.domain_id,
                     f"%{search_request.query}%",
                     f"%{search_request.query}%"
                 ))
@@ -895,15 +1014,15 @@ class ConversationService:
                 
                 # Get paginated results
                 await cursor.execute("""
-                    SELECT conversation_id, domain_id, title, summary, message_count,
-                           last_message_at, created_at, updated_at, is_archived, metadata
+                    SELECT id, domain_id, title, summary, status, message_count,
+                           last_message_at, created_at, updated_at, total_tokens, metadata
                     FROM wl_conversations
-                    WHERE domain_id = %s AND NOT is_archived
+                    WHERE domain_id = %s AND status != 'deleted'
                     AND (title LIKE %s OR summary LIKE %s)
                     ORDER BY COALESCE(last_message_at, created_at) DESC
                     LIMIT %s OFFSET %s
                 """, (
-                    search_request.user_id,
+                    search_request.domain_id,
                     f"%{search_request.query}%",
                     f"%{search_request.query}%",
                     search_request.limit,
@@ -917,7 +1036,7 @@ class ConversationService:
                 conv = self._map_db_to_api_conversation(row)
                 conversations.append(ConversationSummary(
                     id=conv.id,
-                    user_id=conv.user_id,
+                    domain_id=conv.domain_id,
                     title=conv.title,
                     summary=conv.summary,
                     status=conv.status,
@@ -933,14 +1052,14 @@ class ConversationService:
             logger.error(f"Failed to search conversations from DB: {e}")
             raise
     
-    async def _update_user_session_activity(self, user_id: str, conversation_id: str = None):
-        """Update user session activity"""
+    async def _update_user_session_activity(self, domain_id: str, conversation_id: str = None):
+        """Update domain session activity"""
         try:
             session_update = UserSessionUpdate(
                 active_conversation_id=conversation_id,
                 metadata={'last_activity_source': 'conversation_service'}
             )
-            await self.update_user_session(user_id, session_update)
+            await self.update_user_session(domain_id, session_update)
         except Exception as e:
             logger.warning(f"Failed to update user session activity: {e}")
 

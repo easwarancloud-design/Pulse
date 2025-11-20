@@ -51,7 +51,6 @@ const PulseEmbeddedOld = ({ userInfo }) => {
   const showDropdownInParent = (suggestions, inputRect) => {
     if (isInIframe() && window.parent) {
       try {
-        window.parent.postMessage({ type: 'PULSE_INTEGRATION_TEST' }, '*');
         setTimeout(() => {}, 100);
         window.parent.postMessage({
           type: 'PULSE_SHOW_DROPDOWN',
@@ -122,39 +121,110 @@ const PulseEmbeddedOld = ({ userInfo }) => {
 
   const loadThreadsFromStorage = async () => {
     try {
-      // Use hybrid chat service for API-based thread loading
+      // Simple fallback: just try to call the API directly
       const DEFAULT_DOMAIN_ID = 'AG04333';
-      hybridChatService.setUserId(DEFAULT_DOMAIN_ID);
       
-      const conversations = await hybridChatService.getConversationHistory(50);
-      if (conversations && conversations.length > 0) {
-        // Convert API conversations to thread format
-        return conversations.map(conv => ({
-          id: conv.id,
-          title: conv.title,
-          conversation: conv.messages ? conv.messages.map(msg => ({
-            type: msg.message_type,
-            text: msg.content
-          })) : []
-        }));
+      try {
+        // Test 1: Try the user conversations endpoint directly
+        const response = await fetch(
+          `https://workforceagent.elevancehealth.com/api/conversations/user/${DEFAULT_DOMAIN_ID}?limit=10`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          // Handle different response formats
+          let conversations = data;
+          if (data && data.conversations) {
+            conversations = data.conversations;
+          } else if (data && data.data) {
+            conversations = data.data;
+          }
+          
+          if (Array.isArray(conversations) && conversations.length > 0) {
+            // Convert to thread format
+            return conversations.map(conv => ({
+              id: conv.id,
+              title: conv.title || 'Untitled Conversation',
+              conversation: conv.messages ? conv.messages.map(msg => ({
+                type: msg.message_type,
+                text: msg.content
+              })) : []
+            }));
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('❌ Direct API failed:', response.status, errorText);
+        }
+
+      } catch (directAPIError) {
+        console.error('❌ Direct API call failed:', directAPIError);
       }
+
+      // Test 2: Try using the hybrid service as fallback
+      try {
+        hybridChatService.setUserId(DEFAULT_DOMAIN_ID);
+        
+        const conversations = await hybridChatService.getConversationHistory(10);
+        
+        if (conversations && conversations.length > 0) {
+          return conversations.map(conv => ({
+            id: conv.id,
+            title: conv.title || 'Untitled Conversation',
+            conversation: conv.messages ? conv.messages.map(msg => ({
+              type: msg.message_type,
+              text: msg.content
+            })) : []
+          }));
+        }
+      } catch (hybridError) {
+        console.error('❌ Hybrid service fallback failed:', hybridError);
+      }
+
+      return [];
+      
     } catch (error) {
-      console.error('Error loading threads from API:', error);
+      console.error('❌ Error loading threads from API:', error);
+      console.error('❌ Full error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+      // Return empty array instead of null to prevent UI crashes
+      return [];
     }
-    return [];
   };
 
   React.useEffect(() => {
-    setAllThreads(loadThreadsFromStorage());
+    const loadThreads = async () => {
+      try {
+        const threads = await loadThreadsFromStorage();
+        setAllThreads(threads || []);
+      } catch (error) {
+        console.error('Error loading threads:', error);
+        setAllThreads([]);
+      }
+    };
+    
+    loadThreads();
   }, []);
 
   const getFilteredSuggestions = (query) => {
+    // Ensure allThreads is an array before proceeding
+    const threads = Array.isArray(allThreads) ? allThreads : [];
+    
     if (!query.trim()) {
       const maxSuggestions = isInIframe() ? 3 : 6;
-      return allThreads.slice(0, maxSuggestions);
+      return threads.slice(0, maxSuggestions);
     }
-    const filtered = allThreads.filter(thread =>
-      thread.title.toLowerCase().includes(query.toLowerCase())
+    
+    const filtered = threads.filter(thread =>
+      thread.title && thread.title.toLowerCase().includes(query.toLowerCase())
     );
     const maxSuggestions = isInIframe() ? 3 : 6;
     return filtered.slice(0, maxSuggestions);
@@ -562,3 +632,4 @@ const PulseEmbeddedOld = ({ userInfo }) => {
 };
 
 export default PulseEmbeddedOld;
+
