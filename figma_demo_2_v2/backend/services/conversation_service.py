@@ -174,9 +174,18 @@ class ConversationService:
             if cached_conversation and cached_conversation.domain_id == domain_id:
                 # Get cached messages
                 messages = await self._get_cached_messages(conversation_id)
+                # Convert Message objects to MessageResponse objects for proper Pydantic validation
+                message_responses = []
+                for msg in messages:
+                    try:
+                        message_responses.append(MessageResponse(**msg.dict()))
+                    except Exception as e:
+                        logger.warning(f"Failed to convert cached message {msg.id} to MessageResponse: {e}")
+                        # Skip invalid messages rather than failing the entire request
+                        continue
                 # Refresh cache expiry on access
                 await self._refresh_cache_expiry(conversation_id, domain_id)
-                return ConversationResponse(**cached_conversation.dict(), messages=messages)
+                return ConversationResponse(**cached_conversation.dict(), messages=message_responses)
             
             # Fallback to database
             conversation = await self._get_conversation_from_db(conversation_id, domain_id)
@@ -189,7 +198,17 @@ class ConversationService:
             await self._cache_conversation(conversation)
             await self._cache_messages(conversation_id, messages)
             
-            return ConversationResponse(**conversation.dict(), messages=messages)
+            # Convert Message objects to MessageResponse objects for proper Pydantic validation
+            message_responses = []
+            for msg in messages:
+                try:
+                    message_responses.append(MessageResponse(**msg.dict()))
+                except Exception as e:
+                    logger.warning(f"Failed to convert message {msg.id} to MessageResponse: {e}")
+                    # Skip invalid messages rather than failing the entire request
+                    continue
+            
+            return ConversationResponse(**conversation.dict(), messages=message_responses)
             
         except Exception as e:
             logger.error(f"Failed to get conversation {conversation_id}: {e}")
@@ -275,15 +294,15 @@ class ConversationService:
             async with self.mysql() as (cursor, conn):
                 await cursor.execute("""
                     UPDATE wl_conversations 
-                    SET status = 'deleted', updated_at = NOW()
+                    SET status = 'deleted', last_message_at = NOW()
                     WHERE id = %s AND domain_id = %s AND status != 'deleted'
                 """, (conversation_id, domain_id))
                 affected_rows = cursor.rowcount
                 await conn.commit()
             
             if affected_rows > 0:
-                # Remove from caches (commented out for now)
-                # await self._remove_conversation_from_cache(domain_id, conversation_id)
+                # Remove from caches 
+                await self._remove_conversation_from_cache(domain_id, conversation_id)
                 logger.info(f"Deleted conversation {conversation_id} (set status to deleted)")
                 return True
             
@@ -892,6 +911,30 @@ class ConversationService:
             await self.redis.expire(key, REDIS_TTL_SECONDS)
         except Exception as e:
             logger.warning(f"Failed to cache title for conversation {conversation_id}: {e}")
+
+    async def _remove_conversation_from_cache(self, domain_id: str, conversation_id: str):
+        """Remove conversation from all caches when deleted"""
+        try:
+            # 1. Remove individual conversation cache
+            conv_key = RedisKeys.conversation_cache(conversation_id)
+            await self.redis.delete(conv_key)
+            
+            # 2. Remove conversation messages cache
+            msg_key = RedisKeys.conversation_messages(conversation_id)
+            await self.redis.delete(msg_key)
+            
+            # 3. Remove from user conversations cache by invalidating the entire cache
+            # (easier than trying to filter out one conversation from JSON)
+            user_conv_key = RedisKeys.user_conversations(domain_id)
+            await self.redis.delete(user_conv_key)
+            
+            # 4. Remove from conversation titles cache
+            titles_key = RedisKeys.conversation_titles(domain_id)
+            await self.redis.hdel(titles_key, conversation_id)
+            
+            logger.debug(f"Removed conversation {conversation_id} from all caches")
+        except Exception as e:
+            logger.warning(f"Failed to remove conversation {conversation_id} from cache: {e}")
     
     async def _search_titles_from_redis(self, domain_id: str, query: str, limit: int, offset: int) -> List[ConversationSummary]:
         """Search conversation titles from Redis cache"""
