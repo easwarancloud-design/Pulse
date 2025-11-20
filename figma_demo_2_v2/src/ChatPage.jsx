@@ -9,6 +9,8 @@ import { hybridChatService } from './services/hybridChatService';
 import { conversationStorage } from './services/conversationStorageService';
 import { conversationLoader } from './services/conversationLoaderService';
 import { conversationCacheService } from './services/conversationCacheService';
+import { localConversationManager } from './services/localConversationManager';
+import DebugMessagesPanel from './components/DebugMessagesPanel';
 
 // Text formatting utilities
 const formatTextWithLinks = (text) => {
@@ -18,6 +20,26 @@ const formatTextWithLinks = (text) => {
   if (typeof text !== 'string') return text;
 
   let formattedText = text;
+
+  // Fix corrupted UTF-8 characters that show as boxes (□)
+  formattedText = formattedText
+    .replace(/â€¢/g, '•')        // Fix bullet points
+    .replace(/â€"/g, '—')        // Fix em dash
+    .replace(/â€™/g, "'")        // Fix right single quotation mark
+    .replace(/â€œ/g, '"')        // Fix left double quotation mark
+    .replace(/â€/g, '"')         // Fix right double quotation mark
+    .replace(/âŒ/g, '❌')        // Fix cross mark
+    .replace(/âš ï¸/g, '⚠️')     // Fix warning sign
+    .replace(/âš™ï¸/g, '⚙️')     // Fix gear
+    .replace(/â±ï¸/g, '⏱️')     // Fix stopwatch
+    .replace(/ðŸš¨/g, '🚨')       // Fix police car light
+    .replace(/ðŸŒ/g, '🌐')        // Fix globe
+    .replace(/ðŸ"/g, '🔍')        // Fix magnifying glass
+    .replace(/ðŸ"§/g, '🔧')       // Fix wrench
+    .replace(/ðŸš«/g, '🚫')       // Fix no entry sign
+    .replace(/ðŸ"/g, '🔒')        // Fix lock
+    .replace(/□/g, '')           // Remove box characters entirely
+    .replace(/\uFFFD/g, '');     // Remove replacement characters
 
   // Safety: strip any live-agent control markers before HTML formatting
   formattedText = formattedText
@@ -51,12 +73,12 @@ const formatTextWithLinks = (text) => {
     .replace(/["']+/g, '')                              // Remove all single/double quotes
     .replace(/\\n/g, '<br />')                          // Literal \n to <br>
     .replace(/\n/g, '<br />')                           // Convert actual newlines to <br>
-    .replace(/ {3}- /g, '   â€¢ ')                        // Indented dashes to bullets
+    .replace(/ {3}- /g, '   • ')                        // Indented dashes to bullets (fixed UTF-8)
     .replace(/\n{3,}/g, '\n\n')                         // if there are 3 or more consecutive newlines reduce to 2 new lines
     .replace(/<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>/gi, '<br /><br />'); // Reduce triple line breaks to double
     
   // Step 3: Handle list items (preserve ** for bold)
-  formattedText = formattedText.replace(/- (\*\*[^*]+\*\*)/g, 'â€¢ $1');
+  formattedText = formattedText.replace(/- (\*\*[^*]+\*\*)/g, '• $1');  // Fixed UTF-8 bullet character
     
   // Step 4: FINAL - Convert **text** to bold (this must be LAST)
   // Use inline style to guarantee bold rendering regardless of external CSS
@@ -97,7 +119,7 @@ const extractReferenceLinks = (text) => {
   return links;
 };
 
-const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThread, isNewChat, isNewChatActive, onNewChat, onThreadSelect, onFirstMessage, onThreadUpdate, userInfo }) => {
+const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThread, isNewChat, isNewChatActive, onNewChat, onThreadSelect, onFirstMessage, onThreadUpdate, userInfo, addConversationImmediateRef }) => {
   const location = useLocation();
   const { getToken } = useAccessToken();
   
@@ -135,19 +157,86 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     window.assistantResponseSaved = false;
     // ðŸ”„ Create conversation if this is a new chat
     try {
-      if (isNewChat || !hybridChatService.getCurrentConversationId()) {
+      // Check if we need to create a new conversation
+      const hasActiveConversation = hybridChatService.getCurrentConversationId();
+      const hasExistingMessages = currentThread?.conversation && currentThread.conversation.length > 0;
+      const shouldCreateNewConversation = (isNewChat && !hasExistingMessages) || !hasActiveConversation;
+      
+      if (shouldCreateNewConversation) {
+        console.log('🔍 CONVERSATION CHECK:', {
+          isNewChat,
+          hasActiveConversation: !!hasActiveConversation,
+          hasExistingMessages,
+          shouldCreateNewConversation,
+          currentConversationId: hasActiveConversation,
+          currentThreadId: currentThread?.id,
+          reason: shouldCreateNewConversation ? 'needs new conversation' : 'continuing existing'
+        });
+        console.log('🆕 Creating new conversation...');
         const conversationTitle = inputText.length > 50 ? 
           inputText.substring(0, 50) + '...' : inputText;
-        const conversationId = await hybridChatService.startNewConversation(conversationTitle);
+        
+        // If we already have a currentThread from "New Chat", use it and create backend conversation
+        if (currentThread && currentThread.title === 'New Chat') {
+          console.log('🎯 Creating backend conversation for existing New Chat thread:', currentThread.id);
+          
+          // Create the conversation in the backend with the question title
+          const backendConversationId = await hybridChatService.startNewConversation(conversationTitle);
+          
+          // Update the thread ID to match the backend conversation ID
+          if (backendConversationId) {
+            console.log('🔄 Updating thread ID from', currentThread.id, 'to', backendConversationId);
+            const oldId = currentThread.id;
+            currentThread.id = backendConversationId;
+            hybridChatService.setActiveConversation(backendConversationId);
+            
+            // 🎯 Add to sidebar immediately when backend conversation is created
+            if (addConversationImmediateRef.current) {
+              addConversationImmediateRef.current.addConversation(backendConversationId, conversationTitle);
+              console.log('✅ Added conversation to sidebar immediately:', {id: backendConversationId, title: conversationTitle});
+            }
+          }
+          
+          // Conversation is now added to sidebar - title update will just update the existing entry
+        } else {
+          // Only create new conversation if we don't have a "New Chat" thread
+          const conversationId = await hybridChatService.startNewConversation(conversationTitle);
+          
+          // 🎯 Add to sidebar - only for truly new conversations
+          if (addConversationImmediateRef.current && conversationId) {
+            addConversationImmediateRef.current.addConversation(conversationId, conversationTitle);
+          }
         }
+      } else {
+        console.log('✅ EXISTING CONVERSATION - Not creating new conversation. Using existing ID:', hybridChatService.getCurrentConversationId());
+      }
     } catch (error) {
       console.error('âŒ Failed to create conversation:', error);
       // Continue with chat even if conversation creation fails
+    }
+
+    // 🎯 Update title if this is the first question in a "New Chat"
+    if (currentThread && currentThread.title === 'New Chat' && inputText.trim()) {
+      const questionTitle = inputText.length > 50 ? 
+        inputText.substring(0, 50) + '...' : inputText;
+      
+      console.log('🎯 Updating title from "New Chat" to:', questionTitle, 'for thread:', currentThread.id);
+      if (addConversationImmediateRef.current) {
+        // Just update the title of the existing sidebar entry, don't add new one
+        addConversationImmediateRef.current.updateTitle(currentThread.id, questionTitle);
+        console.log('✅ Updated existing sidebar entry title to:', questionTitle);
+      } else {
+        console.warn('⚠️ addConversationImmediateRef.current is null - cannot update title');
+      }
+      
+      // Update the current thread title so we don't treat follow-ups as new chats
+      currentThread.title = questionTitle;
     }
     
     let partialMessage = '';
     let liveAgentTriggered = false; 
     const botChatId = `msg_${Date.now()}`;
+    const userChatId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const domainid = DEFAULT_DOMAIN_ID; // Use AG04333 as default
     
@@ -166,7 +255,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
     if (replaceExisting && messages.length >= 2) {
       // Update existing messages instead of adding new ones
-      userMessage = { ...messages[0], text: inputText };
+      userMessage = { ...messages[0], text: inputText, chat_id: userChatId };
       botMessage = { 
         ...messages[1], 
         text: '', 
@@ -177,7 +266,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       setMessages([userMessage, botMessage]);
     } else {
       // Add user message and empty bot message immediately
-      userMessage = { id: messages.length + 1, type: 'user', text: inputText };
+      userMessage = { id: messages.length + 1, type: 'user', text: inputText, chat_id: userChatId };
       botMessage = { 
         id: messages.length + 2, 
         type: 'assistant', 
@@ -197,8 +286,21 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           source: 'chat_page', 
           timestamp: Date.now(),
           domain_id: domainid
-        }
+        },
+        userChatId // Pass user chat ID for database storage
       );
+
+      // 💾 ALSO SAVE TO LOCAL STORAGE (instant UI response)
+      if (currentThread?.id) {
+        localConversationManager.saveMessageLocally(currentThread.id, {
+          type: 'user',
+          text: inputText,
+          chat_id: userChatId,
+          timestamp: Date.now()
+        });
+        console.log('💾 User question saved to local storage');
+      }
+
       } catch (storageError) {
       console.error('âŒ Failed to save user question:', storageError);
       console.error('âŒ Error details:', {
@@ -285,8 +387,20 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                 chat_id: botChatId,
                 response_type: 'short_response',
                 content_length: cleanedShort.length
-              }
+              },
+              botChatId // Pass bot chat ID for database storage
             );
+            
+            // 💾 ALSO SAVE TO LOCAL STORAGE (instant UI response)
+            if (currentThread?.id) {
+              localConversationManager.saveMessageLocally(currentThread.id, {
+                type: 'assistant',
+                text: cleanedShort,
+                chat_id: botChatId,
+                timestamp: Date.now()
+              });
+              console.log('💾 Assistant response saved to local storage');
+            }
             
             window.responseAlreadySaved = true;
             } catch (shortResponseError) {
@@ -543,6 +657,52 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           });
           // API-only mode - no localStorage fallback
         }
+
+        // 💾 Save complete conversation to local storage after completion
+        try {
+          const conversationId = hybridChatService.getCurrentConversationId();
+          if (conversationId && currentThread) {
+            // Get the current conversation title (either from thread or create from question)
+            const conversationTitle = currentThread.title !== 'New Chat' 
+              ? currentThread.title 
+              : (inputText.length > 50 ? inputText.substring(0, 50) + '...' : inputText);
+            
+            // Get updated messages from state including the just-completed message
+            setMessages(currentMessages => {
+              const messagesToSave = currentMessages.map(msg => ({
+                id: msg.id,
+                type: msg.type,
+                text: msg.text,
+                timestamp: Date.now(),
+                chat_id: msg.chat_id
+              }));
+
+              console.log('💾 Saving complete conversation after API response:', {
+                conversationId,
+                title: conversationTitle,
+                messageCount: messagesToSave.length,
+                messages: messagesToSave
+              });
+
+              localConversationManager.saveCompleteConversation(
+                conversationId, 
+                conversationTitle, 
+                messagesToSave
+              );
+
+              // Trigger a storage event to refresh the sidebar
+              window.dispatchEvent(new StorageEvent('storage', {
+                key: 'pulse_conversations_updated',
+                newValue: conversationId,
+                url: window.location.href
+              }));
+
+              return currentMessages; // Return unchanged messages
+            });
+          }
+        } catch (localSaveError) {
+          console.error('❌ Failed to save complete conversation to local storage:', localSaveError);
+        }
       }
 
     } catch (error) {
@@ -619,6 +779,51 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         // Reset the save tracking flags for next message
         window.userQuestionSaved = false;
         window.responseAlreadySaved = false;
+
+        // 💾 Save complete conversation to local storage (also in finally block for error cases)
+        try {
+          const conversationId = hybridChatService.getCurrentConversationId();
+          if (conversationId && currentThread) {
+            // Get the current conversation title (either from thread or create from question)
+            const conversationTitle = currentThread.title !== 'New Chat' 
+              ? currentThread.title 
+              : (inputText.length > 50 ? inputText.substring(0, 50) + '...' : inputText);
+            
+            // Get updated messages from state including error messages
+            setMessages(currentMessages => {
+              const messagesToSave = currentMessages.map(msg => ({
+                id: msg.id,
+                type: msg.type,
+                text: msg.text,
+                timestamp: Date.now(),
+                chat_id: msg.chat_id
+              }));
+
+              console.log('💾 Saving complete conversation in finally block:', {
+                conversationId,
+                title: conversationTitle,
+                messageCount: messagesToSave.length
+              });
+
+              localConversationManager.saveCompleteConversation(
+                conversationId, 
+                conversationTitle, 
+                messagesToSave
+              );
+
+              // Trigger a storage event to refresh the sidebar
+              window.dispatchEvent(new StorageEvent('storage', {
+                key: 'pulse_conversations_updated',
+                newValue: conversationId,
+                url: window.location.href
+              }));
+
+              return currentMessages; // Return unchanged messages
+            });
+          }
+        } catch (localSaveError) {
+          console.error('❌ Failed to save complete conversation in finally block:', localSaveError);
+        }
         
       } catch (finalSaveError) {
         console.error('âŒ Finally block save failed:', finalSaveError);
@@ -713,19 +918,14 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       ];
     } 
     
-    // Priority 5: Default fallback
+    // Priority 5: Default fallback - show welcome message
     else {
       return [
         {
           id: 1,
-          type: 'user',
-          text: 'Who from my team  hasn\'t completed the Cyber Security Training?'
-        },
-        {
-          id: 2,
           type: 'assistant',
-          text: 'Based on the latest records, this is currently where your team members stand in regards to the Do The Right Thing: Cyber Security Training 2025:',
-          showTable: true
+          text: 'Hello! How can I assist you today?',
+          isWelcome: true
         }
       ];
     }
@@ -1017,20 +1217,47 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
   // Update messages when thread changes
   useEffect(() => {
-    if (currentThread?.conversation && currentThread.conversation.length > 1) {
-      // Load conversation history from the selected thread (only for multi-message conversations)
+    console.log('🔄 Thread changed:', {
+      threadId: currentThread?.id,
+      conversationLength: currentThread?.conversation?.length,
+      isNewChat,
+      hasError: currentThread?.hasError,
+      conversationPreview: currentThread?.conversation?.slice(0, 2)
+    });
+    
+    if (currentThread?.conversation && currentThread.conversation.length > 0) {
+      // Load conversation history from the selected thread
+      console.log('📖 Loading conversation history:', currentThread.id, 'with', currentThread.conversation.length, 'messages');
+      console.log('🔍 DEBUG: Raw conversation data:', currentThread.conversation.map(msg => ({
+        id: msg.id,
+        type: msg.type,
+        text: msg.text?.substring(0, 30) + '...'
+      })));
+      
       const threadMessages = currentThread.conversation.map((msg, index) => ({
         id: index + 1,
         type: msg.type,
         text: msg.text,
         showTable: msg.showTable || false,
-        isWelcome: msg.isWelcome || false
+        isWelcome: msg.isWelcome || false,
+        chat_id: msg.chat_id || null,
+        isError: msg.isError || false,
+        errorType: msg.errorType || null
       }));
+      
+      console.log('🔍 DEBUG: Final threadMessages for setMessages:', threadMessages.map(msg => ({
+        id: msg.id,
+        type: msg.type,
+        text: msg.text?.substring(0, 30) + '...'
+      })));
+      
       setMessages(threadMessages);
+      console.log('✅ Messages loaded for conversation:', threadMessages.length, 'messages');
       // Clear the input when switching to an existing thread
       setUserInput('');
     } else if (isNewChat && currentThread && (!currentThread.conversation || currentThread.conversation.length === 0)) {
       // Show welcome message for new chats without conversation
+      console.log('📝 Showing welcome message for new chat:', currentThread.id);
       const welcomeMessages = [
         {
           id: 1,
@@ -1040,6 +1267,31 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         }
       ];
       setMessages(welcomeMessages);
+    } else if (!isNewChat && currentThread && (!currentThread.conversation || currentThread.conversation.length === 0)) {
+      // Show fallback message for existing chats that failed to load (404 errors, etc.)
+      console.log('⚠️ Existing conversation failed to load, showing fallback message for:', currentThread.id);
+      const fallbackMessages = [
+        {
+          id: 1,
+          type: 'assistant',
+          text: `Unable to load the conversation "${currentThread.title || currentThread.id}". This may happen if the conversation was deleted or is temporarily unavailable. You can start a new conversation by typing your message below.`,
+          isWelcome: true,
+          isError: true
+        }
+      ];
+      setMessages(fallbackMessages);
+    } else if (currentThread && !currentThread.conversation) {
+      // Safety fallback for any other edge cases
+      console.log('🛡️ Safety fallback for thread without conversation property:', currentThread.id);
+      const safetyMessages = [
+        {
+          id: 1,
+          type: 'assistant',
+          text: 'Welcome! You can start by typing your message below.',
+          isWelcome: true
+        }
+      ];
+      setMessages(safetyMessages);
     }
     // Note: Don't override messages for single-message conversations (manual input) 
     // because useState already handled the response generation
@@ -1069,8 +1321,11 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       
       try {
         // Case 1: New chat - first message (should save with proper title)
-        if (isNewChat && currentThread && 
-            (!currentThread.conversation || currentThread.conversation.length === 0)) {
+        // 🆕 FIX: Also handle predefined questions that start new conversations
+        const isFirstMessage = (!currentThread.conversation || currentThread.conversation.length === 0);
+        const shouldSaveAsNew = (isNewChat || urlType === 'predefined') && currentThread && isFirstMessage;
+        
+        if (shouldSaveAsNew) {
           
           const userMessage = messages.find(msg => msg.type === 'user');
           if (userMessage) {
@@ -1083,7 +1338,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             
             await saveThreadToStorage(updatedThread);
             onFirstMessage && onFirstMessage(updatedThread);
-            console.log('✅ New conversation saved to Today category with title:', updatedThread.title);
+            console.log('✅ New conversation saved with title:', updatedThread.title, 'Type:', urlType || 'normal');
             
             // Note: Don't call setIsNewChat here since isNewChat is a prop
             // The parent App.js will update this state via onFirstMessage
@@ -1100,8 +1355,38 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           };
           
           await saveThreadToStorage(updatedThread);
+          
+          // 🔥 CRITICAL: Invalidate cache so next load gets fresh data with new messages
+          console.log('🔄 Invalidating conversation cache for:', currentThread.id);
+          console.log('🔍 Cache service available:', !!conversationCacheService);
+          console.log('🔍 Messages before save:', currentThread.conversation?.length, '→ after:', messages.length);
+          
+          if (conversationCacheService) {
+            // Clear the specific conversation from cache
+            const hadCache = conversationCacheService.has(currentThread.id);
+            conversationCacheService.remove(currentThread.id);
+            console.log('🗑️ Removed conversation from cache:', currentThread.id, '(had cache:', hadCache, ')');
+            
+            // Also clear user cache to force sidebar refresh
+            const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+            const userId = userInfo.domainId || userInfo.domain_id || 'default';
+            conversationCacheService.clearUserCache(userId);
+            console.log('🗑️ Cleared user cache for:', userId);
+            
+            // Force refresh the conversation in the loader service
+            if (conversationLoader && conversationLoader.refreshConversation) {
+              console.log('🔄 Triggering conversation refresh...');
+              conversationLoader.refreshConversation(currentThread.id).catch(err => {
+                console.log('⚠️ Conversation refresh failed (non-critical):', err.message);
+              });
+            }
+          } else {
+            console.warn('⚠️ conversationCacheService not available for cache invalidation');
+          }
+          
           onThreadUpdate && onThreadUpdate(updatedThread);
           console.log('✅ Follow-up message saved to existing conversation:', currentThread.title);
+          console.log('🔄 Cache invalidated - next load will fetch fresh data');
         }
       } catch (error) {
         console.error('❌ Failed to save conversation:', error);
@@ -1112,7 +1397,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     const timeoutId = setTimeout(handleConversationSaving, 300);
     
     return () => clearTimeout(timeoutId);
-  }, [messages, loading, isNewChat, currentThread]);
+  }, [messages, loading, isNewChat, currentThread, urlType]);
 
   // Load conversation from URL if conversationId is provided
   useEffect(() => {
@@ -1259,11 +1544,14 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       (effectiveQuestion && !isNewChat && !currentThread?.conversation?.length && !urlType) ||
       // Manual question from URL parameters (embedded page)
       (urlQuery && urlType === 'manual')
+      // 🚫 REMOVED: Predefined questions should NOT auto-trigger
+      // They should just pre-fill the input and wait for user to press Enter
     );
 
     if (shouldCallLiveAPI && effectiveQuestion && !apiTriggered) {
       // Replace the default response with live API call
       const questionText = urlQuery || effectiveQuestion;
+      console.log('🎯 Auto-triggering API for question:', questionText, 'Type:', urlType);
       setApiTriggered(true); // Set flag to prevent re-execution
       
       // Clear URL parameters immediately after processing to prevent refresh issues
@@ -1274,6 +1562,16 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       sendWorkforceAgentMessage(questionText, true); // true = replace existing
     }
   }, [effectiveQuestion, urlQuery, urlType, isNewChat, currentThread?.id, apiTriggered]);
+
+  // Handle predefined questions - just clear URL params without auto-triggering
+  useEffect(() => {
+    if (urlQuery && urlType === 'predefined') {
+      console.log('🎯 Predefined question detected - pre-filling input only:', urlQuery);
+      // Clear URL parameters to prevent refresh issues, but don't auto-trigger
+      window.history.replaceState({}, document.title, window.location.pathname);
+      // The question will be pre-filled in userInput via the useState initializer above
+    }
+  }, [urlQuery, urlType]);
 
   const saveThreadToStorage = async (thread) => {
     try {
@@ -1603,6 +1901,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         onThreadSelect={onThreadSelect}
         currentActiveThread={currentThread}
         isNewChatActive={isNewChatActive}
+        onAddConversationImmediate={addConversationImmediateRef}
       />
 
       {/* Right Chat Window */}
@@ -1656,7 +1955,12 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
               </div>
             )}
 
-            {messages.map((message) => (
+            {console.log('🎨 RENDER DEBUG: About to render', messages.length, 'messages:', 
+              messages.map(m => ({ id: m.id, type: m.type, text: m.text?.substring(0, 20) + '...' }))
+            )}
+            {messages.map((message) => {
+              console.log('🎨 RENDER: Processing message', message.id, 'type:', message.type, 'isWelcome:', message.isWelcome);
+              return (
               <div key={message.id} style={{ width: '100%' }}>
                 {message.type === 'user' ? (
                   <div className="flex justify-end">
@@ -1897,7 +2201,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
             <div ref={messagesEndRef} />
           </div>
         </div>

@@ -79,7 +79,7 @@ export class HybridChatService {
   /**
    * Save user question (immediately when user submits)
    */
-  async saveUserQuestion(questionText, metadata = {}) {
+  async saveUserQuestion(questionText, metadata = {}, chatId = null) {
     try {
       // If no active conversation, create one
       if (!this.currentConversationId) {
@@ -90,14 +90,13 @@ export class HybridChatService {
       }
 
       if (this.isLocalStorageEnabled) {
-        // Save to API
+        // Save to API using unified storage function
         console.log('🔄 Attempting to save user question to API:', questionText.substring(0, 50) + '...');
-        await conversationStorage.addMessage(
-          this.currentConversationId,
-          'user',
-          questionText,
-          { ...metadata, timestamp: new Date().toISOString() }
-        );
+        await conversationStorage.storeConversationData('question', this.currentConversationId, questionText, {
+          chatId,
+          metadata: { ...metadata, timestamp: new Date().toISOString() },
+          isNewConversation: !this.currentConversationId
+        });
         }
     } catch (error) {
       console.error('❌ Failed to save user question:', error);
@@ -140,7 +139,7 @@ export class HybridChatService {
   /**
    * Save assistant response (after receiving from live API)
    */
-  async saveAssistantResponse(responseText, questionText = null, metadata = {}) {
+  async saveAssistantResponse(responseText, questionText = null, metadata = {}, chatId = null) {
     try {
       if (!this.currentConversationId) {
         console.error('❌ No currentConversationId available for saving assistant response');
@@ -148,15 +147,14 @@ export class HybridChatService {
       }
 
       if (this.isLocalStorageEnabled && this.currentConversationId) {
-        // Save to API
+        // Save to API using unified storage function
         console.log('🔄 Attempting to save assistant response to API:', responseText.substring(0, 50) + '...');
         
-        const result = await conversationStorage.addMessage(
-          this.currentConversationId,
-          'assistant',
-          responseText,
-          { ...metadata, timestamp: new Date().toISOString() }
-        );
+        const result = await conversationStorage.storeConversationData('response', this.currentConversationId, responseText, {
+          chatId,
+          metadata: { ...metadata, timestamp: new Date().toISOString() },
+          questionText
+        });
         
         } else {
         console.warn('⚠️ LocalStorage disabled or no conversation ID, skipping API save');
@@ -491,7 +489,15 @@ export class HybridChatService {
    */
   setActiveConversation(conversationId) {
     this.currentConversationId = conversationId;
-    }
+  }
+
+  /**
+   * Clear active conversation ID (for starting fresh)
+   */
+  clearActiveConversation() {
+    console.log('🗑️ Clearing active conversation ID:', this.currentConversationId);
+    this.currentConversationId = null;
+  }
 
   /**
    * Get current conversation ID

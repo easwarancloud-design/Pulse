@@ -5,7 +5,7 @@ import JiraIcon from './components/JiraIcon';
 import ServiceNowIcon from './components/ServiceNowIcon';
 import { hybridChatService } from './services/hybridChatService';
 
-const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSelect, currentActiveThread, isNewChatActive }) => {
+const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSelect, currentActiveThread, isNewChatActive, onAddConversationImmediate }) => {
   const [isDarkModeLocal, setIsDarkModeLocal] = useState(isDarkMode || false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState(null);
@@ -100,6 +100,81 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
     last30Days: []
   });
 
+  // Function to immediately add a new conversation to the sidebar
+  const addConversationImmediately = (conversationId, title) => {
+    const newThread = {
+      id: conversationId,
+      title: title,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_message_at: new Date().toISOString(),
+      message_count: 1,
+      status: 'active'
+    };
+
+    // Add to today's conversations at the top
+    setAllThreads(prev => ({
+      ...prev,
+      today: [newThread, ...prev.today]
+    }));
+
+    console.log('✅ Immediately added conversation to sidebar:', { conversationId, title });
+  };
+
+  // Function to update the title of an existing conversation
+  const updateConversationTitle = (conversationId, newTitle) => {
+    setAllThreads(prev => {
+      const updateThreads = (threads) => 
+        threads.map(thread => 
+          thread.id === conversationId 
+            ? { ...thread, title: newTitle, updated_at: new Date().toISOString() }
+            : thread
+        );
+
+      return {
+        today: updateThreads(prev.today),
+        yesterday: updateThreads(prev.yesterday),
+        lastWeek: updateThreads(prev.lastWeek),
+        last30Days: updateThreads(prev.last30Days)
+      };
+    });
+
+    console.log('✅ Updated conversation title in sidebar:', { conversationId, newTitle });
+  };
+
+  // Function to update the conversation ID (for when frontend temp ID becomes backend ID)
+  const updateConversationId = (oldId, newId) => {
+    setAllThreads(prev => {
+      const updateThreads = (threads) => 
+        threads.map(thread => 
+          thread.id === oldId 
+            ? { ...thread, id: newId, updated_at: new Date().toISOString() }
+            : thread
+        );
+
+      const result = {
+        today: updateThreads(prev.today),
+        yesterday: updateThreads(prev.yesterday),
+        lastWeek: updateThreads(prev.lastWeek),
+        last30Days: updateThreads(prev.last30Days)
+      };
+
+      console.log('✅ Updated conversation ID in sidebar:', { oldId, newId });
+      return result;
+    });
+  };
+
+  // Expose all functions to parent component
+  useEffect(() => {
+    if (onAddConversationImmediate && onAddConversationImmediate.current !== undefined) {
+      onAddConversationImmediate.current = {
+        addConversation: addConversationImmediately,
+        updateTitle: updateConversationTitle,
+        updateId: updateConversationId
+      };
+    }
+  }, [onAddConversationImmediate]);
+
   // Load threads from API on component mount
   useEffect(() => {
     const loadThreads = async () => {
@@ -147,34 +222,67 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
     }
 
     setIsSearching(true);
+    console.log(`🔍 Starting search for: "${query}"`);
+    
     try {
       // Use the conversation API to search
       const apiResults = await hybridChatService.searchConversationHistory(query);
+      console.log(`📊 API returned ${apiResults?.length || 0} results:`, apiResults);
       
       // If we have API results, use them
       if (apiResults && apiResults.length > 0) {
-        // Transform API results into the expected thread format
-        const transformedResults = {
-          today: [],
-          yesterday: [],
-          lastWeek: [],
-          last30Days: apiResults.map(result => ({
-            id: result.id,
-            title: result.title || 'Untitled conversation',
-            conversation: result.conversation || []
-          }))
+        // Helper function to categorize conversations by date
+        const categorizeByDate = (conversations) => {
+          const now = new Date();
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+          const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+          const last30Days = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+          const categorized = {
+            today: [],
+            yesterday: [],
+            lastWeek: [],
+            last30Days: []
+          };
+
+          conversations.forEach(result => {
+            const createdAt = new Date(result.created_at || result.updated_at || Date.now());
+            const conversation = {
+              id: result.id,
+              title: result.title || 'Untitled conversation',
+              conversation: result.conversation || []
+            };
+
+            if (createdAt >= today) {
+              categorized.today.push(conversation);
+            } else if (createdAt >= yesterday) {
+              categorized.yesterday.push(conversation);
+            } else if (createdAt >= lastWeek) {
+              categorized.lastWeek.push(conversation);
+            } else if (createdAt >= last30Days) {
+              categorized.last30Days.push(conversation);
+            } else {
+              // Older than 30 days, still put in last30Days section
+              categorized.last30Days.push(conversation);
+            }
+          });
+
+          return categorized;
         };
+
+        const transformedResults = categorizeByDate(apiResults);
+        console.log(`✅ Setting categorized search results:`, transformedResults);
         setSearchResults(transformedResults);
       } else {
-        // Fall back to local search
-        const localResults = getFilteredThreadsLocal(query);
-        setSearchResults(localResults);
+        // API returned empty results - use local search
+        console.log('API search returned no results, using local search for:', query);
+        setSearchResults(null); // Clear API results to use local filtering
       }
     } catch (error) {
-      console.error('Search error, falling back to local search:', error);
-      // Fall back to local search on error
-      const localResults = getFilteredThreadsLocal(query);
-      setSearchResults(localResults);
+      console.error('API search failed, using local search:', error);
+      // API failed - clear search results to use local filtering
+      setSearchResults(null);
     }
     setIsSearching(false);
   };
@@ -213,8 +321,15 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
 
   // Filter threads based on search query
   const getFilteredThreads = () => {
+    console.log(`🎯 getFilteredThreads called with:`, {
+      hasSearchResults: searchResults !== null,
+      searchQuery: searchQuery,
+      searchResultsData: searchResults
+    });
+    
     // If we have search results from API, use those
-    if (searchResults !== null) {
+    if (searchResults !== null && searchQuery.trim()) {
+      console.log(`✅ Using API search results`);
       return searchResults;
     }
 
@@ -226,11 +341,17 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
       last30Days: (allThreads && allThreads.last30Days) || []
     };
 
-    if (!searchQuery.trim()) {
-      return safeAllThreads;
+    // If there's a search query but no API results, filter locally
+    if (searchQuery.trim()) {
+      console.log(`🔍 Using local filtering for: "${searchQuery}"`);
+      const localResults = getFilteredThreadsLocal(searchQuery);
+      console.log(`📊 Local filtering results:`, localResults);
+      return localResults;
     }
     
-    return getFilteredThreadsLocal(searchQuery);
+    // No search query - return all threads
+    console.log(`📋 No search query - showing all threads`);
+    return safeAllThreads;
   };
   
   const filteredThreads = getFilteredThreads();
@@ -325,6 +446,17 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
       // Call delete API in background - don't block frontend deletion and don't care about result
       hybridChatService.deleteConversation(threadId).then(() => {
         console.log('🗑️ Background API delete completed for:', threadId);
+        // Force refresh the conversation list after successful deletion
+        setTimeout(() => {
+          loadThreadsFromStorage().then(refreshedThreads => {
+            if (refreshedThreads) {
+              setAllThreads(refreshedThreads);
+              console.log('🔄 Refreshed conversation list after deletion');
+            }
+          }).catch(error => {
+            console.warn('⚠️ Failed to refresh conversation list after deletion:', error);
+          });
+        }, 500); // Small delay to ensure backend processing is complete
       }).catch((error) => {
         console.log('⚠️ Background API delete failed for:', threadId, error.message);
       });
@@ -620,7 +752,7 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                               color: isDarkMode ? '#FFF' : '#000',
                               border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
                             }}
-                            autoFocus
+                            
                           />
                           <button
                             onClick={() => handleRenameThread(thread.id, editingTitle)}
@@ -734,7 +866,7 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                               color: isDarkMode ? '#FFF' : '#000',
                               border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
                             }}
-                            autoFocus
+                            
                           />
                           <button
                             onClick={() => handleRenameThread(thread.id, editingTitle)}
@@ -847,7 +979,7 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                             color: isDarkMode ? '#FFF' : '#000',
                             border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
                           }}
-                          autoFocus
+                          
                         />
                         <button
                           onClick={() => handleRenameThread(thread.id, editingTitle)}
@@ -959,7 +1091,7 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                             color: isDarkMode ? '#FFF' : '#000',
                             border: `1px solid ${isDarkMode ? '#2861BB' : '#ccc'}`
                           }}
-                          autoFocus
+                          
                         />
                         <button
                           onClick={() => handleRenameThread(thread.id, editingTitle)}

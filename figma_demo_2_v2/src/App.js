@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import Mainpage from './Mainpage';
 import PulseMain from './PulseMain';
@@ -8,6 +8,8 @@ import PulseEmbeddedOld from './PulseEmbeddedOld';
 import ChatIntegrationDemo from './components/ChatIntegrationDemo';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { hybridChatService } from './services/hybridChatService';
+import { conversationCacheService } from './services/conversationCacheService';
+import { localConversationManager } from './services/localConversationManager';
 import './App.css';
 
 function AppContent() {
@@ -19,8 +21,14 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Ref for immediate sidebar conversation addition
+  const addConversationImmediateRef = useRef(null);
+
   // Handle URL parameters for result page
   React.useEffect(() => {
+    // 🧹 Clean up old local storage on app start
+    localConversationManager.cleanupOldConversations();
+    
     if (location.pathname === '/resultpage') {
       const params = new URLSearchParams(location.search);
       const query = params.get('query');
@@ -68,6 +76,14 @@ function AppContent() {
   // Auto-load first conversation on page refresh/initialization
   useEffect(() => {
     const autoLoadFirstConversation = async () => {
+      console.log('🔍 Auto-load check:', {
+        pathname: location.pathname,
+        currentThread: !!currentThread,
+        search: location.search,
+        isNewChat,
+        isNewChatActive
+      });
+      
       // Only auto-load if we're on resultpage, have no current thread, and no URL params
       if (location.pathname === '/resultpage' && 
           !currentThread && 
@@ -75,31 +91,35 @@ function AppContent() {
           !isNewChat && 
           !isNewChatActive) {
         
+        console.log('✅ Conditions met, attempting to auto-load first conversation');
+        
         try {
           // Get user info to set user ID
           const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-          const userId = userInfo.domainId || userInfo.domain_id;
+          const userId = userInfo.domainId || userInfo.domain_id || 'AG04333'; // Default fallback
           
-          if (userId) {
-            hybridChatService.setUserId(userId);
+          console.log('👤 Using user ID for auto-load:', userId);
+          hybridChatService.setUserId(userId);
+          
+          // Get conversation history to find the first conversation
+          const conversations = await hybridChatService.getConversationHistory(10, 0, true);
+          console.log('📚 Found conversations:', conversations?.length || 0);
+          
+          if (conversations && conversations.length > 0) {
+            const firstConversation = conversations[0];
+            console.log('🔄 Auto-loading first conversation on page refresh:', firstConversation.title);
             
-            // Get conversation history to find the first conversation
-            const conversations = await hybridChatService.getConversationHistory(10, 0, true);
-            
-            if (conversations && conversations.length > 0) {
-              const firstConversation = conversations[0];
-              console.log('🔄 Auto-loading first conversation on page refresh:', firstConversation.title);
-              
-              // Load the first conversation using the existing handleThreadSelect logic
-              await handleThreadSelect(firstConversation);
-            } else {
-              console.log('📝 No conversations found, staying on default view');
-            }
+            // Load the first conversation using the existing handleThreadSelect logic
+            await handleThreadSelect(firstConversation);
+          } else {
+            console.log('📝 No conversations found, staying on default view');
           }
         } catch (error) {
           console.error('❌ Failed to auto-load first conversation:', error);
           // Stay on default view if auto-load fails
         }
+      } else {
+        console.log('⏭️ Skipping auto-load: conditions not met');
       }
     };
 
@@ -260,6 +280,14 @@ function AppContent() {
     setIsNewChatActive(true);
     setCurrentThread(newThread);
     setUserQuestion('');
+
+    // 🎯 Immediately add "New Chat" to sidebar (UI responsiveness)
+    if (addConversationImmediateRef.current) {
+      console.log('🎯 Adding "New Chat" to sidebar immediately', newThread.id);
+      addConversationImmediateRef.current.addConversation(newThread.id, 'New Chat');
+    } else {
+      console.warn('⚠️ addConversationImmediateRef.current is null - cannot add to sidebar');
+    }
     
     // Navigate to result page for new chat
     navigate('/resultpage');
@@ -270,6 +298,12 @@ function AppContent() {
   const handleThreadSelect = async (thread) => {
     try {
       console.log('🔍 Loading conversation:', thread.id);
+      
+      // 🔥 Clear any cached data for this conversation before loading
+      if (typeof conversationCacheService !== 'undefined') {
+        console.log('🗑️ Pre-clearing cache for conversation:', thread.id);
+        conversationCacheService.remove(thread.id);
+      }
       
       // Get user info to set user ID
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
@@ -291,11 +325,70 @@ function AppContent() {
       }
 
       // Try to load the full conversation from API
-      console.log('🔄 Attempting to load conversation from API...');
+      console.log('🔄 Attempting to load conversation...');
       
+      // 💾 FIRST: Check local storage for instant response
+      const localData = localConversationManager.getLocalConversation(thread.id);
+      if (localData && localData.messages.length > 0) {
+        console.log('💾 Found local data with', localData.messages.length, 'messages - showing immediately');
+        const localThread = localConversationManager.formatForChatPage(localData);
+        setCurrentThread(localThread);
+        hybridChatService.setActiveConversation(thread.id);
+        setIsNewChat(false);
+        setIsNewChatActive(false);
+        setUserQuestion('');
+        navigate('/resultpage');
+        
+        // Still load from API in background to sync any new messages
+        setTimeout(async () => {
+          try {
+            console.log('🌐 Background sync: Loading from API to check for updates...');
+            const apiData = await hybridChatService.getConversation(thread.id, {
+              includeMessages: true,
+              forceRefresh: true
+            });
+            
+            if (apiData && apiData.messages && apiData.messages.length > localData.messages.length) {
+              console.log('🔄 API has more messages - updating local storage and UI');
+              
+              // Convert API messages to normalized format
+              const normalizedApiMessages = apiData.messages.map((msg, index) => ({
+                id: index + 1,
+                type: msg.message_type || msg.type || 'user',
+                text: msg.content || msg.message_text || msg.text || '',
+                showTable: false,
+                isWelcome: false,
+                originalMsg: msg
+              }));
+              
+              // Update local storage with complete conversation
+              localConversationManager.saveCompleteConversation(
+                thread.id,
+                apiData.title || thread.title,
+                normalizedApiMessages
+              );
+              
+              // Update current thread to show new messages
+              setCurrentThread(prevThread => ({
+                ...prevThread,
+                conversation: normalizedApiMessages,
+                title: apiData.title || prevThread.title
+              }));
+              
+              console.log('✅ Local storage and UI updated with new messages from API');
+            }
+          } catch (error) {
+            console.log('⚠️ Background sync failed (non-critical):', error.message);
+          }
+        }, 100);
+        return;
+      }
+      
+      // 🌐 FALLBACK: Load from API if no local data
+      console.log('🌐 No local data found - loading from API...');
       const fullConversation = await hybridChatService.getConversation(thread.id, {
         includeMessages: true,
-        forceRefresh: false // Use cache if available
+        forceRefresh: true // 🔥 FORCE FRESH DATA to see new messages
       });
       
       // Check if we got an error object instead of conversation data
@@ -330,26 +423,45 @@ function AppContent() {
       }
       else if (fullConversation) {
         console.log('✅ Loaded conversation from API:', fullConversation.title || 'No title');
+        console.log('🔍 DEBUG: Full conversation data:', {
+          hasConversationArray: !!fullConversation.conversation,
+          conversationLength: fullConversation.conversation?.length,
+          hasMessagesArray: !!fullConversation.messages,
+          messagesLength: fullConversation.messages?.length,
+          messagesSample: fullConversation.messages?.slice(0, 2).map(m => ({
+            type: m.message_type,
+            content: m.content?.substring(0, 30) + '...'
+          }))
+        });
         
         // Normalize the conversation structure for ChatPage
         const normalizedMessages = [];
         
         // If we have a pre-created conversation array (fallback case), use it
         if (fullConversation.conversation && Array.isArray(fullConversation.conversation)) {
+          console.log('📋 Using conversation array from API');
           normalizedMessages.push(...fullConversation.conversation);
         }
         // Otherwise, if the API returns messages array, convert them to chat format
         else if (fullConversation.messages && Array.isArray(fullConversation.messages)) {
+          console.log('📋 Converting messages array to conversation format. Messages count:', fullConversation.messages.length);
           fullConversation.messages.forEach((msg, index) => {
-            normalizedMessages.push({
+            const normalizedMsg = {
               id: index + 1,
               type: msg.message_type || msg.type || 'user',
               text: msg.content || msg.message_text || msg.text || '',
               showTable: false,
               isWelcome: false,
               originalMsg: msg // Keep original for debugging
+            };
+            console.log(`  📝 Normalized message ${index + 1}:`, {
+              id: normalizedMsg.id,
+              type: normalizedMsg.type,
+              text: normalizedMsg.text.substring(0, 30) + '...'
             });
+            normalizedMessages.push(normalizedMsg);
           });
+          console.log('✅ Final normalized messages count:', normalizedMessages.length);
         }
         
         // If no messages, add a welcome message
@@ -370,6 +482,25 @@ function AppContent() {
           conversation: normalizedMessages, // Array of message objects for ChatPage
           apiData: fullConversation // Keep original API data for debugging
         });
+        
+        // � SAVE TO LOCAL STORAGE: Store complete conversation for future instant loading
+        const conversationId = fullConversation.id || thread.id;
+        const conversationTitle = fullConversation.title || thread.title;
+        console.log('💾 Saving API conversation to local storage:', {
+          conversationId,
+          title: conversationTitle,
+          messageCount: normalizedMessages.length
+        });
+        
+        localConversationManager.saveCompleteConversation(
+          conversationId,
+          conversationTitle,
+          normalizedMessages
+        );
+        
+        // 🔥 CRITICAL: Set active conversation ID so new messages don't create duplicate chats
+        console.log('🎯 Setting active conversation ID:', conversationId);
+        hybridChatService.setActiveConversation(conversationId);
       } else {
         // No conversation data from API (null returned)
         console.log('⚠️ No conversation data from API - using cached thread data with welcome message');
@@ -389,21 +520,44 @@ function AppContent() {
       }
     } catch (error) {
       console.error('❌ Error loading conversation:', error);
+      console.error('❌ Error details:', {
+        name: error.name,
+        message: error.message,
+        conversationId: thread.id
+      });
+      
+      // Provide specific error messages based on error type
+      let fallbackMessage = 'Hello! I\'m here to help you with any questions you might have.';
+      
+      if (error.message.includes('404') || error.message.includes('not found')) {
+        fallbackMessage = `The conversation "${thread.title || thread.id}" could not be found. This may happen if the conversation was deleted or moved. You can start a new conversation by typing your message below.`;
+      } else if (error.message.includes('400')) {
+        fallbackMessage = 'There was an issue loading this conversation due to invalid data. You can start a new conversation by typing your message below.';
+      } else if (error.message.includes('500')) {
+        fallbackMessage = 'There was a server error loading this conversation. You can try again later or start a new conversation below.';
+      } else {
+        fallbackMessage = `Unable to load the conversation "${thread.title || thread.id}". You can start a new conversation by typing your message below.`;
+      }
       
       // Always provide a fallback to prevent the UI from breaking
-      console.log('🔄 Using fallback conversation structure');
+      console.log('🔄 Using enhanced fallback conversation structure with specific error message');
       setCurrentThread({
         ...thread,
         conversation: [
           {
             id: 1,
             type: 'assistant',
-            text: 'Hello! I\'m here to help you with any questions you might have.',
-            isWelcome: true
+            text: fallbackMessage,
+            isWelcome: true,
+            isError: true,
+            errorType: error.message.includes('404') ? '404' : 
+                      error.message.includes('400') ? '400' : 
+                      error.message.includes('500') ? '500' : 'unknown'
           }
         ],
         isLocal: true,
-        hasError: true
+        hasError: true,
+        errorMessage: error.message
       });
     }
     
@@ -481,6 +635,7 @@ function AppContent() {
               onThreadSelect={handleThreadSelect}
               onFirstMessage={handleFirstMessage}
               onThreadUpdate={handleThreadUpdate}
+              addConversationImmediateRef={addConversationImmediateRef}
             />
           </div>
         } 

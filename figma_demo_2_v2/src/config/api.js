@@ -27,7 +27,7 @@ export const API_ENDPOINTS = {
   CONVERSATION_DELETE: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/delete`,
   CONVERSATION_MESSAGES: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages`,
   CONVERSATION_MESSAGES_BULK: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages/bulk`,
-  CONVERSATION_SEARCH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/search`,
+  CONVERSATION_SEARCH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/search/`,
   USER_CONVERSATIONS: (userId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/user/${userId}`,
   USER_SESSION: (userId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/session/${userId}`,
   CONVERSATION_HEALTH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/health`,

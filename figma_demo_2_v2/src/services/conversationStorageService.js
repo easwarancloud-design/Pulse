@@ -59,10 +59,17 @@ export class ConversationStorageService {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`❌ Create conversation failed:`, response.status, errorText);
+        throw new Error(`HTTP error! status: ${response.status}, response: ${errorText}`);
       }
 
       const conversation = await response.json();
+      console.log('✅ Successfully created conversation:', {
+        id: conversation.id,
+        title: conversation.title,
+        domain_id: conversation.domain_id
+      });
       return conversation;
 
     } catch (error) {
@@ -86,6 +93,12 @@ export class ConversationStorageService {
       // Only add pagination parameters if the remote API supports them
       // For now, let's test without pagination first to see if basic loading works
       const url = `${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?${params}`;
+      console.log('📡 GET conversation request:', {
+        conversationId,
+        url,
+        params: Object.fromEntries(params.entries())
+      });
+      
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -93,7 +106,12 @@ export class ConversationStorageService {
         }
       });
 
-      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+      console.log('📡 GET conversation response:', {
+        conversationId,
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -189,18 +207,20 @@ export class ConversationStorageService {
   /**
    * Add a message to a conversation
    */
-  async addMessage(conversationId, messageType, content, metadata = {}, referenceLinks = []) {
+  async addMessage(conversationId, messageType, content, metadata = {}, referenceLinks = [], chatId = null) {
     try {
       console.log('📝 Message details:', {
         conversationId,
         messageType,
         content: content.substring(0, 100) + '...',
-        metadata
+        metadata,
+        chatId
       });
       
       const messageData = {
         message_type: messageType, // 'user' or 'assistant'
         content: content,
+        chat_id: chatId, // Frontend chat bubble ID for feedback mapping
         metadata: {
           timestamp: new Date().toISOString(),
           ...metadata
@@ -586,6 +606,77 @@ export class ConversationStorageService {
         stack: error.stack
       });
       return [];
+    }
+  }
+
+  /**
+   * Unified storage function for questions and responses
+   * Handles both question and response storage with appropriate payloads
+   */
+  async storeConversationData(type, conversationId, content, options = {}) {
+    try {
+      const {
+        chatId = null,
+        metadata = {},
+        referenceLinks = [],
+        isNewConversation = false,
+        questionText = null
+      } = options;
+
+      console.log(`📝 Storing ${type}:`, {
+        conversationId,
+        type,
+        contentPreview: content.substring(0, 100) + '...',
+        chatId,
+        isNewConversation
+      });
+
+      let messageType, messageMetadata;
+
+      switch (type) {
+        case 'question':
+        case 'user_question':
+          messageType = 'user';
+          messageMetadata = {
+            source: 'user_input',
+            timestamp: new Date().toISOString(),
+            is_first_message: isNewConversation,
+            ...metadata
+          };
+          break;
+
+        case 'response':
+        case 'assistant_response':
+          messageType = 'assistant';
+          messageMetadata = {
+            source: 'ai_assistant',
+            timestamp: new Date().toISOString(),
+            question_context: questionText,
+            response_type: 'complete',
+            ...metadata
+          };
+          break;
+
+        default:
+          throw new Error(`Unsupported storage type: ${type}`);
+      }
+
+      // Use the existing addMessage function for actual storage
+      const result = await this.addMessage(
+        conversationId,
+        messageType,
+        content,
+        messageMetadata,
+        referenceLinks,
+        chatId
+      );
+
+      console.log(`✅ Successfully stored ${type}:`, { conversationId, chatId });
+      return result;
+
+    } catch (error) {
+      console.error(`❌ Failed to store ${type}:`, error);
+      throw error;
     }
   }
 }
