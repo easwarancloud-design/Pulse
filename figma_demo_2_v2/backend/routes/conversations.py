@@ -183,6 +183,33 @@ async def delete_conversation_legacy(
     """
     return await delete_conversation(conversation_id, domain_id)
 
+@router.post("/conversations/{conversation_id}/update", response_model=ConversationResponse)
+async def update_conversation_post(
+    conversation_id: str = Path(..., description="Conversation ID"),
+    update_data: ConversationUpdate = ...,
+    domain_id: str = Query(..., description="Domain ID")
+):
+    """
+    Update a conversation - Using POST method for consistency
+    
+    - **conversation_id**: ID of the conversation to update
+    - **domain_id**: ID of the domain updating the conversation
+    - **title**: New title for the conversation (optional)
+    - **summary**: New summary for the conversation (optional)
+    - **status**: New status for the conversation (optional)
+    - **metadata**: New metadata for the conversation (optional)
+    """
+    try:
+        conversation = await conversation_service.update_conversation(conversation_id, domain_id, update_data)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return conversation
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update conversation {conversation_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
+
 # ================================================
 # USER CONVERSATIONS
 # ================================================
