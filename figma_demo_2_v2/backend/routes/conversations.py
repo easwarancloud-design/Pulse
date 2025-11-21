@@ -118,7 +118,7 @@ async def get_conversation(
         logger.error(f"Failed to get conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve conversation: {str(e)}")
 
-@router.put("/conversations/{conversation_id}", response_model=ConversationResponse)
+@router.post("/conversations/{conversation_id}/update", response_model=ConversationResponse)
 async def update_conversation(
     conversation_id: str = Path(..., description="Conversation ID"),
     update_data: ConversationUpdate = ...,
@@ -172,43 +172,10 @@ async def delete_conversation(
         logger.error(f"Failed to delete conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete conversation: {str(e)}")
 
-# Legacy DELETE endpoint for backward compatibility
-@router.delete("/conversations/{conversation_id}")
-async def delete_conversation_legacy(
-    conversation_id: str = Path(..., description="Conversation ID"),
-    domain_id: str = Query(..., description="Domain ID")
-):
-    """
-    Legacy DELETE endpoint - redirects to POST delete for compatibility
-    """
-    return await delete_conversation(conversation_id, domain_id)
+# ================================================
+# USER CONVERSATIONS
+# ================================================
 
-@router.post("/conversations/{conversation_id}/update", response_model=ConversationResponse)
-async def update_conversation_post(
-    conversation_id: str = Path(..., description="Conversation ID"),
-    update_data: ConversationUpdate = ...,
-    domain_id: str = Query(..., description="Domain ID")
-):
-    """
-    Update a conversation - Using POST method for consistency
-    
-    - **conversation_id**: ID of the conversation to update
-    - **domain_id**: ID of the domain updating the conversation
-    - **title**: New title for the conversation (optional)
-    - **summary**: New summary for the conversation (optional)
-    - **status**: New status for the conversation (optional)
-    - **metadata**: New metadata for the conversation (optional)
-    """
-    try:
-        conversation = await conversation_service.update_conversation(conversation_id, domain_id, update_data)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        return conversation
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update conversation {conversation_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to update conversation: {str(e)}")
 
 # ================================================
 # USER CONVERSATIONS
@@ -375,27 +342,6 @@ async def update_chat_feedback(
         logger.error(f"Failed to update chat feedback: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update feedback: {str(e)}")
 
-# Legacy PUT endpoints for backward compatibility
-@router.put("/conversations/{conversation_id}/messages/{message_id}/feedback")
-async def update_message_feedback_legacy(
-    conversation_id: str = Path(..., description="Conversation ID"),
-    message_id: str = Path(..., description="Message ID"),
-    feedback_data: MessageFeedbackUpdate = ...,
-    domain_id: str = Query(..., description="Domain ID")
-):
-    """Legacy PUT endpoint - redirects to POST feedback for compatibility"""
-    return await update_message_feedback(conversation_id, message_id, feedback_data, domain_id)
-
-@router.put("/conversations/{conversation_id}/chat/{chat_id}/feedback")
-async def update_chat_feedback_legacy(
-    conversation_id: str = Path(..., description="Conversation ID"),
-    chat_id: str = Path(..., description="Chat bubble ID from frontend"),
-    feedback_data: MessageFeedbackUpdate = ...,
-    domain_id: str = Query(..., description="Domain ID")
-):
-    """Legacy PUT endpoint - redirects to POST feedback for compatibility"""
-    return await update_chat_feedback(conversation_id, chat_id, feedback_data, domain_id)
-
 # ================================================
 # SEARCH ENDPOINTS
 # ================================================
@@ -486,7 +432,7 @@ async def get_user_session(
         logger.error(f"Failed to get user session for {domain_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
 
-@router.put("/conversations/session/{domain_id}", response_model=UserSession)
+@router.post("/conversations/session/{domain_id}/update", response_model=UserSession)
 async def update_user_session(
     domain_id: str = Path(..., description="Domain ID"),
     session_data: UserSessionUpdate = ...
