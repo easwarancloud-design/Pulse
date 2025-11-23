@@ -329,7 +329,18 @@ function AppContent() {
       
       // 💾 FIRST: Check local storage for instant response
       const localData = localConversationManager.getLocalConversation(thread.id);
-      if (localData && localData.messages.length > 0) {
+      
+      // 🔍 VALIDATION: Check if localStorage has old format (numeric IDs instead of UUIDs)
+      const hasOldFormat = localData && localData.messages && localData.messages.some(msg => 
+        typeof msg.id === 'number' || (typeof msg.id === 'string' && !msg.id.startsWith('msg_') && !msg.id.startsWith('local_'))
+      );
+      
+      if (hasOldFormat) {
+        console.warn('⚠️ Detected old localStorage format with numeric IDs - clearing and reloading from API');
+        localConversationManager.deleteConversation(thread.id);
+        // Fall through to API load below
+      }
+      else if (localData && localData.messages.length > 0) {
         console.log('💾 Found local data with', localData.messages.length, 'messages - showing immediately');
         const localThread = localConversationManager.formatForChatPage(localData);
         setCurrentThread(localThread);
@@ -351,9 +362,11 @@ function AppContent() {
             if (apiData && apiData.messages && apiData.messages.length > localData.messages.length) {
               console.log('🔄 API has more messages - updating local storage and UI');
               
-              // Convert API messages to normalized format
+              // Convert API messages to normalized format (PRESERVE UUIDs!)
               const normalizedApiMessages = apiData.messages.map((msg, index) => ({
-                id: index + 1,
+                id: msg.id || `local_${index + 1}`,  // ✅ Preserve backend UUID
+                backend_id: msg.id,                   // Keep backend ID separately
+                chat_id: msg.chat_id || null,         // ✅ Preserve chat_id
                 type: msg.message_type || msg.type || 'user',
                 text: msg.content || msg.message_text || msg.text || '',
                 showTable: false,
@@ -445,9 +458,19 @@ function AppContent() {
         // Otherwise, if the API returns messages array, convert them to chat format
         else if (fullConversation.messages && Array.isArray(fullConversation.messages)) {
           console.log('📋 Converting messages array to conversation format. Messages count:', fullConversation.messages.length);
+          console.log('🔍 RAW BACKEND MESSAGES (first 2):', fullConversation.messages.slice(0, 2).map(msg => ({
+            allKeys: Object.keys(msg),
+            id: msg.id,
+            chat_id: msg.chat_id,
+            message_type: msg.message_type,
+            content: msg.content?.substring(0, 50)
+          })));
+          
           fullConversation.messages.forEach((msg, index) => {
             const normalizedMsg = {
-              id: index + 1,
+              id: msg.id || `local_${index + 1}`,  // ✅ Preserve backend UUID
+              backend_id: msg.id,                   // Keep backend ID separately
+              chat_id: msg.chat_id || null,         // ✅ Preserve chat_id from backend
               type: msg.message_type || msg.type || 'user',
               text: msg.content || msg.message_text || msg.text || '',
               showTable: false,
@@ -456,6 +479,8 @@ function AppContent() {
             };
             console.log(`  📝 Normalized message ${index + 1}:`, {
               id: normalizedMsg.id,
+              backend_id: normalizedMsg.backend_id,
+              chat_id: normalizedMsg.chat_id,
               type: normalizedMsg.type,
               text: normalizedMsg.text.substring(0, 30) + '...'
             });

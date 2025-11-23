@@ -237,6 +237,11 @@ export class LocalConversationManager {
       return false;
     }
   }
+  
+  // Alias for convenience
+  deleteConversation(conversationId) {
+    return this.deleteLocalConversation(conversationId);
+  }
 
   // === UTILITY METHODS ===
 

@@ -4,8 +4,9 @@ import ChatIcon from './components/ChatIcon';
 import JiraIcon from './components/JiraIcon';
 import ServiceNowIcon from './components/ServiceNowIcon';
 import { hybridChatService } from './services/hybridChatService';
+import { localConversationManager } from './services/localConversationManager';
 
-const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSelect, currentActiveThread, isNewChatActive, onAddConversationImmediate }) => {
+const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSelect, currentActiveThread, isNewChatActive, onAddConversationImmediate, onThreadUpdate }) => {
   const [isDarkModeLocal, setIsDarkModeLocal] = useState(isDarkMode || false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState(null);
@@ -394,15 +395,76 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
   // Handle thread rename
   const handleRenameThread = async (threadId, newTitle) => {
     try {
-      // Update via API instead of localStorage
       console.log('🔄 Attempting to rename thread:', threadId, 'to:', newTitle);
       
-      // Refresh threads from API after rename operation
-      const threads = await loadThreadsFromStorage();
-      setAllThreads(threads);
+      // 1. 🚀 IMMEDIATE UI UPDATE - Update the title in the current threads state immediately
+      setAllThreads(prevThreads => {
+        const updateThreadsInCategory = (threads) => {
+          return threads.map(thread => 
+            thread.id === threadId ? { ...thread, title: newTitle } : thread
+          );
+        };
+
+        return {
+          today: updateThreadsInCategory(prevThreads.today || []),
+          yesterday: updateThreadsInCategory(prevThreads.yesterday || []),
+          lastWeek: updateThreadsInCategory(prevThreads.lastWeek || []),
+          last30Days: updateThreadsInCategory(prevThreads.last30Days || [])
+        };
+      });
+
+      // 2. 💾 UPDATE LOCAL STORAGE - Update immediately regardless of API response
+      try {
+        localConversationManager.updateConversationTitle(threadId, newTitle);
+        console.log('✅ Local storage updated with new title:', newTitle);
+      } catch (localError) {
+        console.error('❌ Failed to update local storage:', localError);
+        // Continue even if local storage fails
+      }
+
+      // 2.5. 📱 UPDATE CURRENT THREAD - If user is viewing this conversation, update ChatPage too
+      if (currentActiveThread && currentActiveThread.id === threadId && onThreadUpdate) {
+        const updatedThread = { 
+          ...currentActiveThread, 
+          title: newTitle 
+        };
+        onThreadUpdate(updatedThread);
+        console.log('✅ Current thread title updated in ChatPage:', newTitle);
+      }
+
+      // 3. 🌐 BACKGROUND API CALL - Update backend without blocking UI
+      try {
+        const DEFAULT_DOMAIN_ID = 'AG04333';
+        hybridChatService.setUserId(DEFAULT_DOMAIN_ID);
+        
+        const result = await hybridChatService.updateConversation(threadId, { 
+          title: newTitle 
+        });
+        
+        if (result && result.success !== false) {
+          console.log('✅ Backend API updated with new title:', newTitle);
+        } else {
+          console.warn('⚠️ Backend API update failed, but UI and local storage already updated:', result);
+        }
+      } catch (apiError) {
+        console.error('❌ Backend API update failed, but UI and local storage already updated:', apiError);
+        // Don't show error to user since UI is already updated
+      }
+      
     } catch (error) {
-      console.error('Error renaming thread:', error);
+      console.error('❌ Error in rename operation:', error);
+      
+      // If there's a critical error, revert UI by refreshing from storage
+      try {
+        const threads = await loadThreadsFromStorage();
+        setAllThreads(threads);
+        console.log('🔄 Reverted UI due to critical error');
+      } catch (revertError) {
+        console.error('❌ Failed to revert UI:', revertError);
+      }
     }
+    
+    // Clear editing state
     setEditingThreadId(null);
     setEditingTitle('');
   };

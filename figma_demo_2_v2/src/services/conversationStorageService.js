@@ -143,8 +143,8 @@ export class ConversationStorageService {
         domain_id: this.defaultUserId
       });
       
-      const response = await fetch(`${API_ENDPOINTS.CONVERSATION_BY_ID(conversationId)}?${params}`, {
-        method: 'PUT',
+      const response = await fetch(`${API_ENDPOINTS.CONVERSATION_UPDATE(conversationId)}?${params}`, {
+        method: 'POST',
         headers: API_HEADERS.JSON,
         body: JSON.stringify(updates)
       });
@@ -288,6 +288,53 @@ export class ConversationStorageService {
 
     } catch (error) {
       console.error('❌ Failed to add bulk messages:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update existing message content (for regenerated responses)
+   */
+  async updateMessageContent(conversationId, chatId, newContent, metadata = {}) {
+    try {
+      console.log('🔄 Updating message content:', {
+        conversationId,
+        chatId,
+        contentPreview: newContent.substring(0, 100) + '...',
+        metadata
+      });
+
+      const messageData = {
+        message_type: 'assistant', // Regenerated messages are always assistant responses
+        content: newContent,
+        metadata: {
+          timestamp: new Date().toISOString(),
+          regenerated: true,
+          ...metadata
+        }
+      };
+
+      const url = `${API_ENDPOINTS.CONVERSATION_MESSAGE_UPDATE(conversationId, chatId)}?domain_id=${this.defaultUserId}`;
+      console.log('📤 UPDATE REQUEST:', url);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: API_HEADERS.JSON,
+        body: JSON.stringify(messageData)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Update error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      }
+
+      const updatedMessage = await response.json();
+      console.log('✅ Message updated successfully:', updatedMessage);
+      return updatedMessage;
+
+    } catch (error) {
+      console.error('❌ Failed to update message content:', error);
       throw error;
     }
   }
@@ -516,7 +563,7 @@ export class ConversationStorageService {
         };
       }
 
-      const url = `${this.baseURL}/${conversationId}/messages/${messageId}/feedback?domain_id=${this.defaultUserId}`;
+      const url = `${API_ENDPOINTS.MESSAGE_FEEDBACK(conversationId, messageId)}?domain_id=${this.defaultUserId}`;
       
       const response = await fetch(url, {
         method: 'POST',
@@ -536,6 +583,83 @@ export class ConversationStorageService {
 
     } catch (error) {
       console.error('❌ Failed to update message feedback:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update message feedback with better fallback handling
+   * @param {string} conversationId - The conversation ID
+   * @param {string} messageId - The message ID (could be db ID or chat_id)
+   * @param {Object} feedbackData - Feedback data
+   * @param {string} [chatId] - Optional chat_id for fallback
+   */
+  async updateMessageFeedbackImproved(conversationId, messageId, feedbackData, chatId = null) {
+    try {
+      // Skip API call for local conversations
+      if (conversationId && conversationId.startsWith('local_')) {
+        return { 
+          success: true, 
+          message: 'Local conversation feedback noted - not persisted beyond session',
+          local: true,
+          conversationId,
+          messageId,
+          feedbackData
+        };
+      }
+
+      // Try message ID endpoint first
+      try {
+        const url = `${API_ENDPOINTS.MESSAGE_FEEDBACK(conversationId, messageId)}?domain_id=${this.defaultUserId}`;
+        
+        console.log('🔄 Trying message feedback API:', url);
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: API_HEADERS.JSON,
+          body: JSON.stringify(feedbackData)
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Message feedback API success:', result);
+          return result;
+        }
+        
+        console.warn('⚠️ Message feedback failed:', response.status);
+        throw new Error(`Message API failed: ${response.status}`);
+        
+      } catch (messageApiError) {
+        console.warn('⚠️ Message API failed, trying chat API...', messageApiError.message);
+        
+        // If message API failed and we have a chat_id, try chat API
+        if (chatId) {
+          const chatUrl = `${API_ENDPOINTS.CHAT_FEEDBACK(conversationId, chatId)}?domain_id=${this.defaultUserId}`;
+          
+          console.log('🔄 Trying chat feedback API:', chatUrl);
+          
+          const chatResponse = await fetch(chatUrl, {
+            method: 'POST',
+            headers: API_HEADERS.JSON,
+            body: JSON.stringify(feedbackData)
+          });
+
+          if (chatResponse.ok) {
+            const result = await chatResponse.json();
+            console.log('✅ Chat feedback API success:', result);
+            return result;
+          } else {
+            const errorText = await chatResponse.text();
+            throw new Error(`Both APIs failed. Chat API: ${chatResponse.status} ${errorText}`);
+          }
+        }
+        
+        // If no chat_id available, throw the original error
+        throw messageApiError;
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to update feedback (all attempts):', error);
       throw error;
     }
   }

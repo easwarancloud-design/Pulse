@@ -190,11 +190,30 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             currentThread.id = backendConversationId;
             hybridChatService.setActiveConversation(backendConversationId);
             
-            // 🎯 Add to sidebar immediately when backend conversation is created
-            if (addConversationImmediateRef.current) {
-              addConversationImmediateRef.current.addConversation(backendConversationId, conversationTitle);
-              console.log('✅ Added conversation to sidebar immediately:', {id: backendConversationId, title: conversationTitle});
+            // 🔄 Migrate localStorage from old temp ID to new backend ID
+            const oldLocalData = localConversationManager.getLocalConversation(oldId);
+            if (oldLocalData) {
+              console.log('💾 Migrating localStorage from', oldId, 'to', backendConversationId);
+              // Save under new ID
+              localConversationManager.saveCompleteConversation(
+                backendConversationId,
+                oldLocalData.title,
+                oldLocalData.messages
+              );
+              // Delete old entry
+              localConversationManager.deleteLocalConversation(oldId);
+              console.log('✅ LocalStorage migration complete');
             }
+            
+            // 🔄 Update sidebar to use new ID
+            if (addConversationImmediateRef.current) {
+              addConversationImmediateRef.current.updateId(oldId, backendConversationId);
+              console.log('✅ Sidebar ID updated from', oldId, 'to', backendConversationId);
+            }
+            
+            // 🎯 DON'T add new conversation - just update the existing "New Chat" entry
+            // The title will be updated later in the title update block (line ~228)
+            console.log('✅ Backend conversation created, will update "New Chat" title shortly');
           }
           
           // Conversation is now added to sidebar - title update will just update the existing entry
@@ -221,6 +240,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         inputText.substring(0, 50) + '...' : inputText;
       
       console.log('🎯 Updating title from "New Chat" to:', questionTitle, 'for thread:', currentThread.id);
+      
+      // Update sidebar title immediately
       if (addConversationImmediateRef.current) {
         // Just update the title of the existing sidebar entry, don't add new one
         addConversationImmediateRef.current.updateTitle(currentThread.id, questionTitle);
@@ -229,8 +250,50 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         console.warn('⚠️ addConversationImmediateRef.current is null - cannot update title');
       }
       
+      // Update localStorage with new title immediately
+      localConversationManager.updateConversationTitle(currentThread.id, questionTitle);
+      console.log('💾 Updated title in localStorage:', questionTitle);
+      
       // Update the current thread title so we don't treat follow-ups as new chats
       currentThread.title = questionTitle;
+      
+      // 🔄 Notify App.js about the title change (keeps currentThread in sync)
+      if (onThreadUpdate) {
+        onThreadUpdate({
+          ...currentThread,
+          title: questionTitle
+        });
+        console.log('✅ Notified App.js of title update');
+      }
+      
+      // 🎯 UPDATE BACKEND: Save title to backend API immediately
+      try {
+        const conversationId = hybridChatService.getCurrentConversationId();
+        if (conversationId) {
+          console.log('📤 Updating conversation title in backend:', {
+            conversationId,
+            newTitle: questionTitle
+          });
+          
+          await hybridChatService.updateConversation(
+            conversationId,
+            { 
+              title: questionTitle,
+              summary: 'First question asked',
+              metadata: { 
+                auto_renamed: true,
+                original_title: 'New Chat',
+                renamed_at: new Date().toISOString()
+              }
+            }
+          );
+          
+          console.log('✅ Backend title updated successfully');
+        }
+      } catch (titleUpdateError) {
+        console.error('❌ Failed to update title in backend:', titleUpdateError);
+        // Don't fail the chat if title update fails
+      }
     }
     
     let partialMessage = '';
@@ -573,6 +636,19 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                 domain_id: domainid
               }
             );
+            
+            // Save assistant response to localStorage immediately
+            if (currentThread?.id) {
+              localConversationManager.saveMessageLocally(currentThread.id, {
+                type: 'assistant',
+                text: cleanStreamText(partialMessage),
+                chat_id: botChatId,
+                timestamp: Date.now(),
+                completed: true
+              });
+              console.log('Assistant response saved to local storage');
+            }
+            
             // Mark that we've saved the response to avoid duplicate saves
             window.assistantResponseSaved = true;
             
@@ -930,8 +1006,30 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       ];
     }
   });
-  const [likedMessages, setLikedMessages] = useState(new Set());
-  const [dislikedMessages, setDislikedMessages] = useState(new Set());
+  
+  // Feedback state management with localStorage persistence
+  const getFeedbackStorageKey = (type) => `feedback_${type}_${urlConversationId || 'default'}`;
+  
+  const loadFeedbackFromStorage = (type) => {
+    try {
+      const stored = localStorage.getItem(getFeedbackStorageKey(type));
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch (error) {
+      console.error(`Failed to load ${type} feedback from storage:`, error);
+      return new Set();
+    }
+  };
+  
+  const saveFeedbackToStorage = (type, feedbackSet) => {
+    try {
+      localStorage.setItem(getFeedbackStorageKey(type), JSON.stringify([...feedbackSet]));
+    } catch (error) {
+      console.error(`Failed to save ${type} feedback to storage:`, error);
+    }
+  };
+  
+  const [likedMessages, setLikedMessages] = useState(() => loadFeedbackFromStorage('liked'));
+  const [dislikedMessages, setDislikedMessages] = useState(() => loadFeedbackFromStorage('disliked'));
   const [copiedMessage, setCopiedMessage] = useState(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const messagesEndRef = useRef(null);
@@ -1228,27 +1326,44 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     if (currentThread?.conversation && currentThread.conversation.length > 0) {
       // Load conversation history from the selected thread
       console.log('📖 Loading conversation history:', currentThread.id, 'with', currentThread.conversation.length, 'messages');
-      console.log('🔍 DEBUG: Raw conversation data:', currentThread.conversation.map(msg => ({
-        id: msg.id,
+      console.log('🔍 DEBUG: Raw conversation data (first 5):', currentThread.conversation.slice(0,5).map(msg => ({
+        originalId: msg.id,
+        originalChatId: msg.chat_id,
+        message_type: msg.message_type,
         type: msg.type,
-        text: msg.text?.substring(0, 30) + '...'
+        content: msg.content?.substring(0, 30),
+        text: msg.text?.substring(0, 30),
+        keys: Object.keys(msg)
       })));
-      
-      const threadMessages = currentThread.conversation.map((msg, index) => ({
-        id: index + 1,
-        type: msg.type,
-        text: msg.text,
-        showTable: msg.showTable || false,
-        isWelcome: msg.isWelcome || false,
-        chat_id: msg.chat_id || null,
-        isError: msg.isError || false,
-        errorType: msg.errorType || null
-      }));
-      
-      console.log('🔍 DEBUG: Final threadMessages for setMessages:', threadMessages.map(msg => ({
+
+      const threadMessages = currentThread.conversation.map((msg, index) => {
+        // Prefer backend UUID id if present; NEVER overwrite with index if it exists
+        const backendId = msg.id || msg.message_id || null;
+        const chatId = msg.chat_id || null;
+        // Normalise type/text from possible backend field names
+        const messageType = msg.type || msg.message_type || (msg.role === 'assistant' ? 'assistant' : 'user');
+        const messageText = msg.text || msg.content || '';
+        return {
+          id: backendId || `local_${index + 1}`, // Keep UUID or mark clearly as local fallback
+          backend_id: backendId,                 // Preserve original backend id separately
+          type: messageType,
+          text: messageText,
+          showTable: msg.showTable || false,
+          isWelcome: msg.isWelcome || false,
+          chat_id: chatId,
+          original_chat_id: chatId, // alias for clarity in debugging
+          isError: msg.isError || false,
+          errorType: msg.errorType || null,
+          _original: msg // retain original object for future debugging if needed
+        };
+      });
+
+      console.log('🔍 DEBUG: Final mapped messages (first 5):', threadMessages.slice(0,5).map(msg => ({
         id: msg.id,
+        backend_id: msg.backend_id,
+        chat_id: msg.chat_id,
         type: msg.type,
-        text: msg.text?.substring(0, 30) + '...'
+        text: msg.text?.substring(0, 30)
       })));
       
       setMessages(threadMessages);
@@ -1425,19 +1540,50 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           // Set active conversation in hybrid service
           hybridChatService.setActiveConversation(urlConversationId);
           
-          // Convert API messages to UI format
-          const uiMessages = conversation.messages.map((msg, index) => ({
-            id: index + 1,
-            type: msg.message_type === 'user' ? 'user' : 'assistant',
-            text: msg.content,
-            chat_id: msg.id || `msg_${index}`,
-            completed: true,
-            timestamp: msg.created_at,
-            // Add reference links if available
-            referenceLinks: msg.reference_links || [],
-            // Preserve original message metadata
-            metadata: msg.metadata || {}
-          }));
+          // Convert API messages to UI format and extract feedback data
+          const likedSet = new Set();
+          const dislikedSet = new Set();
+          
+          const uiMessages = conversation.messages.map((msg, index) => {
+            // Extract feedback data for state management
+            if (msg.liked === 1) {
+              likedSet.add(index + 1); // Use UI message ID
+            } else if (msg.liked === -1) {
+              dislikedSet.add(index + 1); // Use UI message ID
+            }
+            
+            return {
+              id: index + 1,
+              type: msg.message_type === 'user' ? 'user' : 'assistant',
+              text: msg.content,
+              chat_id: msg.id || `msg_${index}`,
+              completed: true,
+              timestamp: msg.created_at,
+              // Add reference links if available
+              referenceLinks: msg.reference_links || [],
+              // Preserve original message metadata
+              metadata: msg.metadata || {},
+              // Include feedback data for potential future use
+              liked: msg.liked || 0,
+              feedback_text: msg.feedback_text || null,
+              feedback_at: msg.feedback_at || null
+            };
+          });
+
+          // Update feedback state from API data
+          setLikedMessages(likedSet);
+          setDislikedMessages(dislikedSet);
+          
+          // Also save to localStorage for persistence
+          saveFeedbackToStorage('liked', likedSet);
+          saveFeedbackToStorage('disliked', dislikedSet);
+          
+          console.log('🔄 Loaded conversation with feedback:', {
+            conversationId: urlConversationId,
+            totalMessages: uiMessages.length,
+            likedMessages: [...likedSet],
+            dislikedMessages: [...dislikedSet]
+          });
 
           setMessages(uiMessages);
           setApiTriggered(true);
@@ -1505,17 +1651,43 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       );
 
       if (moreData?.messages?.length > 0) {
-        // Convert and append new messages
-        const newUiMessages = moreData.messages.map((msg, index) => ({
-          id: currentMessageCount + index + 1,
-          type: msg.message_type === 'user' ? 'user' : 'assistant',
-          text: msg.content,
-          chat_id: msg.id || `msg_${currentMessageCount + index}`,
-          completed: true,
-          timestamp: msg.created_at,
-          referenceLinks: msg.reference_links || [],
-          metadata: msg.metadata || {}
-        }));
+        // Convert and append new messages, extracting feedback data
+        const newLikedSet = new Set(likedMessages);
+        const newDislikedSet = new Set(dislikedMessages);
+        
+        const newUiMessages = moreData.messages.map((msg, index) => {
+          const messageId = currentMessageCount + index + 1;
+          
+          // Extract feedback data for state management
+          if (msg.liked === 1) {
+            newLikedSet.add(messageId);
+          } else if (msg.liked === -1) {
+            newDislikedSet.add(messageId);
+          }
+          
+          return {
+            id: messageId,
+            type: msg.message_type === 'user' ? 'user' : 'assistant',
+            text: msg.content,
+            chat_id: msg.id || `msg_${currentMessageCount + index}`,
+            completed: true,
+            timestamp: msg.created_at,
+            referenceLinks: msg.reference_links || [],
+            metadata: msg.metadata || {},
+            // Include feedback data
+            liked: msg.liked || 0,
+            feedback_text: msg.feedback_text || null,
+            feedback_at: msg.feedback_at || null
+          };
+        });
+        
+        // Update feedback state with new data
+        setLikedMessages(newLikedSet);
+        setDislikedMessages(newDislikedSet);
+        
+        // Save updated feedback to localStorage
+        saveFeedbackToStorage('liked', newLikedSet);
+        saveFeedbackToStorage('disliked', newDislikedSet);
 
         setMessages(prev => [...prev, ...newUiMessages]);
         
@@ -1573,6 +1745,21 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
   }, [urlQuery, urlType]);
 
+  // Load feedback states when conversation changes
+  useEffect(() => {
+    const conversationId = hybridChatService.getCurrentConversationId();
+    if (conversationId) {
+      const likedSet = loadFeedbackFromStorage('liked');
+      const dislikedSet = loadFeedbackFromStorage('disliked');
+      setLikedMessages(likedSet);
+      setDislikedMessages(dislikedSet);
+      console.log('🔄 Loaded feedback from storage:', { 
+        liked: [...likedSet], 
+        disliked: [...dislikedSet] 
+      });
+    }
+  }, [hybridChatService.getCurrentConversationId()]);
+
   const saveThreadToStorage = async (thread) => {
     try {
       // ðŸ”„ Use conversation API only (no localStorage)
@@ -1627,37 +1814,78 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
   };
 
-  const handleLike = async (messageId) => {
+  const handleLike = async (message) => {
+    // Use preserved backend_id if available (UUID); fall back to displayed id
+    const messageId = message.backend_id || message.id;
     const isCurrentlyLiked = likedMessages.has(messageId);
     const newLikedValue = isCurrentlyLiked ? 0 : 1; // Toggle between neutral (0) and like (1)
     
-    // Update UI state immediately for responsive feel
-    setLikedMessages(prev => {
-      const newSet = new Set(prev);
-      if (isCurrentlyLiked) {
-        newSet.delete(messageId);
-      } else {
-        newSet.add(messageId);
-        // Remove dislike if exists
-        setDislikedMessages(prevDisliked => {
-          const newDislikedSet = new Set(prevDisliked);
-          newDislikedSet.delete(messageId);
-          return newDislikedSet;
-        });
-      }
-      return newSet;
+    console.log('👍 Like clicked:', { 
+      message, 
+      messageId, 
+      chatId: message.chat_id, 
+      isCurrentlyLiked, 
+      newLikedValue,
+      conversationId: hybridChatService.getCurrentConversationId()
     });
+    
+    console.log('🔍 DEBUG - Full message object:', message);
+    console.log('🔍 DEBUG - chatId value:', message.chat_id);
+    console.log('🔍 DEBUG - chatId type:', typeof message.chat_id);
+    console.log('🔍 DEBUG - chatId truthy?', !!message.chat_id);
+    
+    // Update UI state immediately and persist to localStorage
+    const newLikedSet = new Set(likedMessages);
+    const newDislikedSet = new Set(dislikedMessages);
+    
+    if (isCurrentlyLiked) {
+      newLikedSet.delete(messageId);
+    } else {
+      newLikedSet.add(messageId);
+      // Remove dislike if exists (mutual exclusion)
+      newDislikedSet.delete(messageId);
+    }
+    
+    // Update states
+    setLikedMessages(newLikedSet);
+    if (!isCurrentlyLiked) {
+      setDislikedMessages(newDislikedSet);
+    }
+    
+    // Persist to localStorage immediately
+    saveFeedbackToStorage('liked', newLikedSet);
+    if (!isCurrentlyLiked) {
+      saveFeedbackToStorage('disliked', newDislikedSet);
+    }
 
-    // Store feedback in backend
+    // Store feedback in backend (best effort, don't revert UI on failure)
     try {
-      if (conversationStorage) {
-        await conversationStorage.updateMessageFeedback(
-          hybridChatService.getCurrentConversationId(),
+      const conversationId = hybridChatService.getCurrentConversationId();
+  const chatId = message.chat_id || message.original_chat_id || null;
+      
+      console.log('🔍 Like Feedback attempt:', {
+        conversationId,
+        messageId,
+        chatId,
+        hasConversationStorage: !!conversationStorage
+      });
+      
+      if (conversationStorage && conversationId) {
+        // Always use improved feedback method with fallback logic
+        // It will try message_id first, then automatically try chat_id approach if that fails
+        console.log('📡 Using improved feedback method for LIKE with automatic fallback');
+        const result = await conversationStorage.updateMessageFeedbackImproved(
+          conversationId,
           messageId,
-          { liked: newLikedValue }
+          { liked: newLikedValue },
+          chatId
         );
-        }
+        console.log('✅ Like feedback result:', result);
+      } else {
+        console.log('⚠️ Skipping like feedback - missing conversationStorage or conversationId');
+      }
     } catch (error) {
+      console.error('❌ Failed to store like feedback:', error);
       console.error('âŒ Failed to store like feedback:', error);
       // Optionally revert UI state on error
       setLikedMessages(prev => {
@@ -1672,37 +1900,77 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
   };
 
-  const handleDislike = async (messageId) => {
+  const handleDislike = async (message) => {
+    const messageId = message.backend_id || message.id;
     const isCurrentlyDisliked = dislikedMessages.has(messageId);
     const newLikedValue = isCurrentlyDisliked ? 0 : -1; // Toggle between neutral (0) and dislike (-1)
     
-    // Update UI state immediately for responsive feel
-    setDislikedMessages(prev => {
-      const newSet = new Set(prev);
-      if (isCurrentlyDisliked) {
-        newSet.delete(messageId);
-      } else {
-        newSet.add(messageId);
-        // Remove like if exists
-        setLikedMessages(prevLiked => {
-          const newLikedSet = new Set(prevLiked);
-          newLikedSet.delete(messageId);
-          return newLikedSet;
-        });
-      }
-      return newSet;
+    console.log('👎 Dislike clicked:', { 
+      message, 
+      messageId, 
+      chatId: message.chat_id, 
+      isCurrentlyDisliked, 
+      newLikedValue,
+      conversationId: hybridChatService.getCurrentConversationId()
     });
+    
+    console.log('🔍 DEBUG - Full message object:', message);
+    console.log('🔍 DEBUG - chatId value:', message.chat_id);
+    console.log('🔍 DEBUG - chatId type:', typeof message.chat_id);
+    console.log('🔍 DEBUG - chatId truthy?', !!message.chat_id);
+    
+    // Update UI state immediately and persist to localStorage
+    const newDislikedSet = new Set(dislikedMessages);
+    const newLikedSet = new Set(likedMessages);
+    
+    if (isCurrentlyDisliked) {
+      newDislikedSet.delete(messageId);
+    } else {
+      newDislikedSet.add(messageId);
+      // Remove like if exists (mutual exclusion)
+      newLikedSet.delete(messageId);
+    }
+    
+    // Update states
+    setDislikedMessages(newDislikedSet);
+    if (!isCurrentlyDisliked) {
+      setLikedMessages(newLikedSet);
+    }
+    
+    // Persist to localStorage immediately
+    saveFeedbackToStorage('disliked', newDislikedSet);
+    if (!isCurrentlyDisliked) {
+      saveFeedbackToStorage('liked', newLikedSet);
+    }
 
-    // Store feedback in backend
+    // Store feedback in backend (best effort, don't revert UI on failure)
     try {
-      if (conversationStorage) {
-        await conversationStorage.updateMessageFeedback(
-          hybridChatService.getCurrentConversationId(),
+      const conversationId = hybridChatService.getCurrentConversationId();
+  const chatId = message.chat_id || message.original_chat_id || null;
+      
+      console.log('🔍 Dislike Feedback attempt:', {
+        conversationId,
+        messageId,
+        chatId,
+        hasConversationStorage: !!conversationStorage
+      });
+      
+      if (conversationStorage && conversationId) {
+        // Always use improved feedback method with fallback logic
+        // It will try message_id first, then automatically try chat_id approach if that fails
+        console.log('📡 Using improved feedback method for DISLIKE with automatic fallback');
+        const result = await conversationStorage.updateMessageFeedbackImproved(
+          conversationId,
           messageId,
-          { liked: newLikedValue }
+          { liked: newLikedValue },
+          chatId
         );
-        }
+        console.log('✅ Dislike feedback result:', result);
+      } else {
+        console.log('⚠️ Skipping dislike feedback - missing conversationStorage or conversationId');
+      }
     } catch (error) {
+      console.error('❌ Failed to store dislike feedback:', error);
       console.error('âŒ Failed to store dislike feedback:', error);
       // Optionally revert UI state on error
       setDislikedMessages(prev => {
@@ -1835,6 +2103,40 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       
       setStreamingMessageId(null);
       
+      // Update regenerated response in backend using existing add_message endpoint
+      // The backend will detect existing chat_id and UPDATE instead of INSERT
+      if (fullResponse && fullResponse.trim().length > 0) {
+        try {
+          console.log('🔄 Saving regenerated response to backend (will update existing message)...');
+          
+          const messageToUpdate = messages.find(msg => msg.id === messageId);
+          const chatId = messageToUpdate?.chat_id || messageId;
+          
+          // Call the existing add_message endpoint - backend will detect chat_id exists and UPDATE
+          await conversationStorage.addMessage(
+            currentThread?.id || 'unknown',
+            'assistant',
+            cleanStreamText(fullResponse).trim(),
+            {
+              source: 'workforce_agent_regenerated',
+              chat_type: 'bot',
+              regenerated: true,
+              timestamp: Date.now(),
+              session_id: Date.now().toString(),
+              domain_id: domainId
+            },
+            [],
+            chatId  // This tells backend to update message with this chat_id if exists
+          );
+          
+          console.log('✅ Regenerated response saved/updated in backend successfully');
+          
+        } catch (saveError) {
+          console.error('❌ Failed to save regenerated response:', saveError);
+          // Don't throw - let the UI continue working even if save fails
+        }
+      }
+      
     } catch (error) {
       console.error('âŒ Failed to reload response:', error);
       
@@ -1902,6 +2204,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         currentActiveThread={currentThread}
         isNewChatActive={isNewChatActive}
         onAddConversationImmediate={addConversationImmediateRef}
+        onThreadUpdate={onThreadUpdate}
       />
 
       {/* Right Chat Window */}
@@ -2138,7 +2441,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                      (message.chat_id ? (message.chat_id !== streamingMessageId) : (message.id !== streamingMessageId)) && (
                       <div className="flex items-center gap-2 py-1 relative mt-2">
                         <button 
-                          onClick={() => handleLike(message.id)}
+                          onClick={() => handleLike(message)}
                           className={`p-1.5 hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} rounded relative`}
                         >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2146,7 +2449,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                           </svg>
                         </button>
                         <button 
-                          onClick={() => handleDislike(message.id)}
+                          onClick={() => handleDislike(message)}
                           className={`p-1.5 hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} rounded`}
                         >
                           <svg width="16" height="17" viewBox="0 0 16 17" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2431,4 +2734,5 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 };
 
 export default ChatPage;
+
 

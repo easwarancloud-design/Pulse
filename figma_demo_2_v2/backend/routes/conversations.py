@@ -176,11 +176,6 @@ async def delete_conversation(
 # USER CONVERSATIONS
 # ================================================
 
-
-# ================================================
-# USER CONVERSATIONS
-# ================================================
-
 @router.get("/conversations/user/{domain_id}", response_model=List[ConversationSummary])
 async def get_user_conversations(
     domain_id: str = Path(..., description="Domain ID"),
@@ -261,6 +256,42 @@ async def bulk_add_messages(
     except Exception as e:
         logger.error(f"Failed to bulk add messages to conversation {conversation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add messages: {str(e)}")
+
+@router.post("/conversations/{conversation_id}/messages/{chat_id}/update", response_model=MessageResponse)
+async def update_message_content(
+    conversation_id: str = Path(..., description="Conversation ID"),
+    chat_id: str = Path(..., description="Chat ID (message identifier)"),
+    message_data: MessageCreate = ...,
+    domain_id: str = Query(..., description="Domain ID")
+):
+    """
+    Update an existing message content by chat_id (used for regenerated responses)
+    
+    - **conversation_id**: ID of the conversation
+    - **chat_id**: Chat ID of the message to update
+    - **domain_id**: Domain ID
+    - **content**: New message content
+    """
+    try:
+        logger.info(f"Updating message content for chat_id={chat_id} in conversation={conversation_id}")
+        
+        updated_message = await conversation_service.update_message_content(
+            conversation_id, 
+            chat_id, 
+            domain_id,
+            message_data.content,
+            message_data.metadata
+        )
+        
+        if not updated_message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        return updated_message
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update message content: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update message: {str(e)}")
 
 @router.post("/conversations/{conversation_id}/messages/{message_id}/feedback")
 async def update_message_feedback(

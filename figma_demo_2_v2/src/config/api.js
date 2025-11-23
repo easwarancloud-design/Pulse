@@ -24,11 +24,16 @@ export const API_ENDPOINTS = {
   // Local Conversation API endpoints
   CONVERSATIONS: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations`,
   CONVERSATION_BY_ID: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}`,
+  CONVERSATION_UPDATE: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/update`,
   CONVERSATION_DELETE: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/delete`,
   CONVERSATION_MESSAGES: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages`,
+  CONVERSATION_MESSAGE_UPDATE: (conversationId, chatId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages/${chatId}/update`,
   CONVERSATION_MESSAGES_BULK: (conversationId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages/bulk`,
   CONVERSATION_SEARCH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/search/`,
   USER_CONVERSATIONS: (userId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/user/${userId}`,
+  // Feedback endpoints
+  MESSAGE_FEEDBACK: (conversationId, messageId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/messages/${messageId}/feedback`,
+  CHAT_FEEDBACK: (conversationId, chatId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/${conversationId}/chat/${chatId}/feedback`,
   USER_SESSION: (userId) => `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/session/${userId}`,
   CONVERSATION_HEALTH: `${API_BASE_URLS.LOCAL_CONVERSATION_API}/api/conversations/health`,
   

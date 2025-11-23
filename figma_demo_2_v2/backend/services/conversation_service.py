@@ -218,9 +218,12 @@ class ConversationService:
                                 update_data: ConversationUpdate) -> Optional[ConversationResponse]:
         """Update conversation"""
         try:
+            logger.info(f"Updating conversation {conversation_id} for domain {domain_id} with data: {update_data.dict()}")
+            
             # Get existing conversation
             existing_conversation = await self.get_conversation(conversation_id, domain_id)
             if not existing_conversation:
+                logger.warning(f"Conversation {conversation_id} not found for domain {domain_id}")
                 return None
             
             # Prepare update data with proper field mapping
@@ -248,8 +251,8 @@ class ConversationService:
             if not update_fields:
                 return existing_conversation
             
-            # Add last_message_at update instead of updated_at (since updated_at doesn't exist in remote DB)
-            update_fields.append("last_message_at = NOW()")
+            # Explicitly set updated_at to trigger timestamp update
+            update_fields.append("updated_at = NOW()")
             
             # Add WHERE clause parameters
             update_values.extend([conversation_id, domain_id])
@@ -263,6 +266,7 @@ class ConversationService:
                     SET {set_clause}
                     WHERE id = %s AND domain_id = %s
                 """
+                logger.info(f"Executing UPDATE query: {query} with values: {update_values}")
                 await cursor.execute(query, update_values)
                 
                 # Check if any rows were affected
@@ -270,22 +274,38 @@ class ConversationService:
                     logger.warning(f"No conversation found to update: {conversation_id} for domain {domain_id}")
                     return None
                     
+                logger.info(f"Successfully updated {cursor.rowcount} row(s)")
                 await conn.commit()
             
             # Get updated conversation
+            logger.info(f"Fetching updated conversation {conversation_id}")
             updated_conversation = await self.get_conversation(conversation_id, domain_id)
             
             # Update caches
             if updated_conversation:
-                await self._cache_conversation(updated_conversation.conversation)
+                # Convert ConversationResponse to Conversation for caching
+                conversation_for_cache = Conversation(
+                    id=updated_conversation.id,
+                    domain_id=updated_conversation.domain_id,
+                    title=updated_conversation.title,
+                    summary=updated_conversation.summary,
+                    status=updated_conversation.status,
+                    metadata=updated_conversation.metadata,
+                    message_count=updated_conversation.message_count,
+                    total_tokens=updated_conversation.total_tokens,
+                    last_message_at=updated_conversation.last_message_at,
+                    created_at=updated_conversation.created_at,
+                    updated_at=updated_conversation.updated_at
+                )
+                await self._cache_conversation(conversation_for_cache)
                 if update_data.title:
                     await self._cache_conversation_title(domain_id, conversation_id, update_data.title)
             
-            logger.info(f"Updated conversation {conversation_id}")
+            logger.info(f"Successfully updated conversation {conversation_id}")
             return updated_conversation
             
         except Exception as e:
-            logger.error(f"Failed to update conversation {conversation_id}: {e}")
+            logger.error(f"Failed to update conversation {conversation_id}: {e}", exc_info=True)
             raise
     
     async def delete_conversation(self, conversation_id: str, domain_id: str) -> bool:
@@ -318,41 +338,99 @@ class ConversationService:
     
     async def add_message(self, conversation_id: str, domain_id: str, 
                          message_data: MessageCreate) -> Optional[MessageResponse]:
-        """Add message to conversation"""
+        """Add message to conversation (or update if chat_id exists for regenerated responses)"""
         try:
             # Verify conversation exists and belongs to domain
             conversation = await self._get_conversation_from_db(conversation_id, domain_id)
             if not conversation:
                 return None
             
-            message_id = create_message_id()
             now = datetime.utcnow()
             
-            message = Message(
-                id=message_id,
-                conversation_id=conversation_id,
-                chat_id=message_data.chat_id,  # Include chat_id from frontend
-                message_type=message_data.message_type,
-                content=message_data.content,
-                metadata=message_data.metadata or {},
-                created_at=now,
-                updated_at=now
-            )
+            # Check if message with this chat_id already exists (for regenerated responses)
+            existing_message = None
+            if message_data.chat_id:
+                async with self.mysql() as (cursor, conn):
+                    await cursor.execute("""
+                        SELECT * FROM wl_messages 
+                        WHERE chat_id = %s AND conversation_id = %s
+                    """, (message_data.chat_id, conversation_id))
+                    existing_message = await cursor.fetchone()
             
-            # Insert message into MySQL using mapped columns
-            db_data = self._map_api_to_db_message(message)
-            async with self.mysql() as (cursor, conn):
-                await cursor.execute("""
-                    INSERT INTO wl_messages 
-                    (id, conversation_id, chat_id, message_type, content, metadata, token_count, created_at, liked, feedback_text, feedback_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    db_data['id'], db_data['conversation_id'], db_data['chat_id'], 
-                    db_data['message_type'], db_data['content'], db_data['metadata'], 
-                    db_data['token_count'], db_data['created_at'],
-                    db_data['liked'], db_data['feedback_text'], db_data['feedback_at']
-                ))
-                await conn.commit()
+            # If message exists, UPDATE it (regenerated response)
+            if existing_message:
+                logger.info(f"Message with chat_id={message_data.chat_id} exists, updating content (regenerated)")
+                
+                # Merge metadata
+                current_metadata = existing_message.get('metadata', {}) if existing_message.get('metadata') else {}
+                if message_data.metadata:
+                    current_metadata.update(message_data.metadata)
+                    current_metadata['regenerated'] = True
+                    current_metadata['regenerated_at'] = now.isoformat()
+                
+                async with self.mysql() as (cursor, conn):
+                    await cursor.execute("""
+                        UPDATE wl_messages 
+                        SET content = %s, metadata = %s, updated_at = %s
+                        WHERE chat_id = %s AND conversation_id = %s
+                    """, (message_data.content, json.dumps(current_metadata), now, message_data.chat_id, conversation_id))
+                    await conn.commit()
+                    
+                    # Get updated message
+                    await cursor.execute("""
+                        SELECT * FROM wl_messages 
+                        WHERE chat_id = %s AND conversation_id = %s
+                    """, (message_data.chat_id, conversation_id))
+                    updated_result = await cursor.fetchone()
+                
+                message = Message(
+                    id=str(updated_result['id']),
+                    conversation_id=str(updated_result['conversation_id']),
+                    message_type=updated_result['message_type'],
+                    content=updated_result['content'],
+                    chat_id=updated_result.get('chat_id'),
+                    metadata=updated_result.get('metadata', {}),
+                    reference_links=updated_result.get('reference_links', []),
+                    liked=updated_result.get('liked', 0),
+                    feedback_text=updated_result.get('feedback_text'),
+                    created_at=updated_result['created_at'],
+                    updated_at=updated_result.get('updated_at')
+                )
+                
+                # Invalidate cache
+                cache_key = f"conversation:{conversation_id}"
+                await self.redis.delete(cache_key)
+                logger.info(f"Updated message {message.id} (regenerated response)")
+                
+            else:
+                # New message - INSERT
+                message_id = create_message_id()
+                
+                message = Message(
+                    id=message_id,
+                    conversation_id=conversation_id,
+                    chat_id=message_data.chat_id,  # Include chat_id from frontend
+                    message_type=message_data.message_type,
+                    content=message_data.content,
+                    metadata=message_data.metadata or {},
+                    created_at=now,
+                    updated_at=now
+                )
+                
+                # Insert message into MySQL using mapped columns
+                db_data = self._map_api_to_db_message(message)
+                async with self.mysql() as (cursor, conn):
+                    await cursor.execute("""
+                        INSERT INTO wl_messages 
+                        (id, conversation_id, chat_id, message_type, content, metadata, token_count, created_at, liked, feedback_text, feedback_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        db_data['id'], db_data['conversation_id'], db_data['chat_id'], 
+                        db_data['message_type'], db_data['content'], db_data['metadata'], 
+                        db_data['token_count'], db_data['created_at'],
+                        db_data['liked'], db_data['feedback_text'], db_data['feedback_at']
+                    ))
+                    await conn.commit()
             
             # Add reference links if provided
             reference_links = []
@@ -493,6 +571,103 @@ class ConversationService:
         except Exception as e:
             logger.error(f"Failed to update message feedback by chat_id: {e}")
             raise
+
+    async def update_message_content(self, conversation_id: str, chat_id: str, domain_id: str,
+                                     new_content: str, metadata: dict = None) -> Optional[Message]:
+        """Update message content by chat_id (used for regenerated responses)"""
+        try:
+            logger.info(f"Updating message content for chat_id={chat_id} in conversation={conversation_id}")
+            
+            # Verify conversation belongs to domain
+            conversation = await self._get_conversation_from_db(conversation_id, domain_id)
+            if not conversation:
+                logger.error(f"Conversation {conversation_id} not found for domain {domain_id}")
+                return None
+            
+            now = datetime.utcnow()
+            
+            # Update in MySQL using chat_id
+            async with self.mysql() as (cursor, conn):
+                # First, get the current message
+                await cursor.execute("""
+                    SELECT * FROM wl_messages 
+                    WHERE chat_id = %s AND conversation_id = %s
+                """, (chat_id, conversation_id))
+                result = await cursor.fetchone()
+                
+                if not result:
+                    logger.error(f"Message with chat_id={chat_id} not found in conversation {conversation_id}")
+                    return None
+                
+                # Merge metadata
+                current_metadata = result.get('metadata', {}) if result.get('metadata') else {}
+                if metadata:
+                    current_metadata.update(metadata)
+                    current_metadata['regenerated'] = True
+                    current_metadata['regenerated_at'] = now.isoformat()
+                
+                # Update the message content
+                await cursor.execute("""
+                    UPDATE wl_messages 
+                    SET content = %s, metadata = %s, updated_at = %s
+                    WHERE chat_id = %s AND conversation_id = %s
+                """, (new_content, json.dumps(current_metadata), now, chat_id, conversation_id))
+                
+                affected_rows = cursor.rowcount
+                await conn.commit()
+                
+                # Get the updated message
+                await cursor.execute("""
+                    SELECT * FROM wl_messages 
+                    WHERE chat_id = %s AND conversation_id = %s
+                """, (chat_id, conversation_id))
+                updated_result = await cursor.fetchone()
+            
+            if affected_rows > 0 and updated_result:
+                # Create Message object
+                updated_message = Message(
+                    id=str(updated_result['id']),
+                    conversation_id=str(updated_result['conversation_id']),
+                    message_type=updated_result['message_type'],
+                    content=updated_result['content'],
+                    chat_id=updated_result.get('chat_id'),
+                    metadata=updated_result.get('metadata', {}),
+                    reference_links=updated_result.get('reference_links', []),
+                    liked=updated_result.get('liked', 0),
+                    feedback_text=updated_result.get('feedback_text'),
+                    created_at=updated_result['created_at'],
+                    updated_at=updated_result.get('updated_at')
+                )
+                
+                # Update conversation's updated_at timestamp
+                await self._update_conversation_timestamp(conversation_id)
+                
+                # Invalidate cache to force refresh
+                cache_key = f"conversation:{conversation_id}"
+                await self.redis.delete(cache_key)
+                logger.info(f"Invalidated cache for conversation {conversation_id}")
+                
+                logger.info(f"Successfully updated message content for chat_id={chat_id}")
+                return updated_message
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to update message content: {e}")
+            raise
+    
+    async def _update_conversation_timestamp(self, conversation_id: str):
+        """Update conversation's updated_at timestamp"""
+        try:
+            async with self.mysql() as (cursor, conn):
+                await cursor.execute("""
+                    UPDATE wl_conversations 
+                    SET updated_at = NOW()
+                    WHERE id = %s
+                """, (conversation_id,))
+                await conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to update conversation timestamp: {e}")
 
     # ================================================
     # SEARCH OPERATIONS
