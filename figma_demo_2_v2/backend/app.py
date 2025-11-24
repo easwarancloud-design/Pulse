@@ -22,7 +22,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi import APIRouter, Query
 
 from modules.workflow_utils import create_access_token,jwt_auth
-from modules.workflow_utils import get_chat_history, save_chat_history
+from modules.workflow_utils import get_chat_history, save_chat_history,gettoken, get_statetoken
 from modules.agent_dbs import redis_client
 from routes.conversations import router as conversation_router
 from services.conversation_service import conversation_service
@@ -46,6 +46,9 @@ from logging_utils.async_logger import setup_async_logging
 from fastapi import Request, HTTPException
 import uuid
 
+
+import ast
+from fastapi.responses import JSONResponse
 
 # import logging
 # logging.disable(logging.INFO)
@@ -133,7 +136,13 @@ class ChatMessage(BaseModel):
     username: Optional[str] = None
     agent_group: Optional[str] = None
 
+class DomainRequest(BaseModel):
+    domainid: str
 
+
+class TitleRequest(BaseModel):
+    domainid: str
+    user_query: str
 
 app.add_middleware(
     CORSMiddleware,
@@ -152,6 +161,94 @@ security = HTTPBasic()
 VALID_USERNAME = "src_workforce_agent_user"
 VALID_PASSWORD = "topsecret123"
 
+@app.post("/api/generate_title")
+def generate_title(req: TitleRequest):
+
+    url = "https://api.horizon.elevancehealth.com"
+    end_point="/v2/text/chats"  
+    # Get token
+    token = get_statetoken(req.domainid)
+
+    # Headers
+    headers = {
+        'Content-Type': 'application/json',
+        'domainID': req.domainid,
+        'Authorization': f'Bearer {token}'
+    }
+
+    # Prompt: instruct model to avoid PII
+    system_prompt = (
+        "You are a title generator for chat threads. "
+        "Generate a short, clear title summarizing the user's first question. "
+        "Do not include any personal names, dates of birth, phone numbers, emails, or other PII. "
+        "If the question contains PII, replace it with a generic placeholder. "
+        "Example: 'Raju birthday date?' → 'Birthday date?'"
+    )
+
+    payload = json.dumps({
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": req.user_query}
+        ],
+        "stream": False
+    })
+
+    # Call Horizon API
+    response = requests.post(url + end_point, headers=headers, data=payload, verify=False)
+
+    if response.status_code == 200:
+        result = response.json()
+        logger.info("########### generate title ##########")
+        logger.info(result)
+
+        # Extract title (depends on API response format)
+        #title = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        title = result.get("message", {}).get("content", "").strip()
+        return {"title": title}
+    else:
+        logger.error(f"Error: {response.status_code}, {response.text}")
+        print(response.text)
+        return {"title": req.user_query}
+
+
+@app.post("/api/predefined_questions")
+def get_predefined_questions(request: DomainRequest):
+    domainid = request.domainid
+    print('domainid:',domainid)
+
+    if not domainid:
+        raise HTTPException(status_code=400, detail="Missing domainid")
+    # Default role
+    role = "Associate"
+
+    try:
+        # Connect to Redis   
+        # Fetch associate data
+        associate_raw = redis_client.hget("demographic_info", str(domainid))
+        if associate_raw:
+            associate_data = json.loads(associate_raw)
+            subordinates = ast.literal_eval(associate_data.get("subordinates", "[]"))
+            if subordinates:
+                role = "Manager"
+    except Exception as e:
+        print(f"Redis error: {e}")
+        # role remains "Associate"
+
+    try:
+        # Connect to MySQL
+        inthelp = get_connection()
+
+        cursor = inthelp.cursor()
+        query = f"SELECT Question FROM wl_topquestions WHERE AudienceType='{role}' LIMIT 9"
+        cursor.execute(query)
+        raw_questions = cursor.fetchall()
+        questions_list = [q[0] for q in raw_questions]
+
+        return JSONResponse(content={"role": role, "questions": questions_list})
+
+    except Exception as e:
+        print(f"MySQL error: {e}")
+        return JSONResponse(content={"error": "Failed to fetch questions"}, status_code=500)
 
 
 def encrypt_pair(question, answer):
