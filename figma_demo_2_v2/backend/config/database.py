@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from dotenv import load_dotenv
+import ssl
 
 # Load environment variables
 env_file = '.env'
@@ -32,7 +33,7 @@ MYSQL_PORT = 3306
 MYSQL_USER = "SRC_INTHELP_SLVR_WRITE"
 MYSQL_PASSWORD = "S7vcCw96uY$o0f%W"
 MYSQL_DATABASE = "aamsqlapm1009705dev"
-MYSQL_SSL = {"fake_flag_to_enable_tls": True}
+MYSQL_SSL = ssl.create_default_context(cafile="global-bundle.pem")
 
 logger.info("🚀 Using PRODUCTION configuration (AWS databases)")
 
