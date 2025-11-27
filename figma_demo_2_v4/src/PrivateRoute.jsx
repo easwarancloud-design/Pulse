@@ -10,7 +10,12 @@ const PrivateRoute = ({ children }) => {
   const [userDetails, setUserDetails] = useState(null);
 
   useEffect(() => {
-    // If user is not authenticated, record the original path and redirect to Okta.
+    // Skip redirect logic during the dedicated Okta callback route to prevent loops
+    if (location.pathname === '/login/callback') {
+      return;
+    }
+
+    // If user is not authenticated (and not pending), record the original path and redirect to Okta.
     if (!authState?.isPending && !authState?.isAuthenticated) {
       sessionStorage.setItem('originalPath', location.pathname + location.search);
       oktaAuth.signInWithRedirect();

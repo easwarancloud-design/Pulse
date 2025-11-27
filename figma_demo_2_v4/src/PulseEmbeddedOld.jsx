@@ -5,6 +5,15 @@ import hybridChatService from './services/hybridChatService';
 
 // Legacy frozen copy of PulseEmbedded (kept unchanged for /pulseembedded_old)
 const PulseEmbeddedOld = ({ userInfo }) => {
+  // Fallback: if no userInfo prop passed, attempt to load from localStorage (Okta profile persisted there)
+  let effectiveUserInfo = userInfo;
+  if (!effectiveUserInfo || Object.keys(effectiveUserInfo).length === 0) {
+    try {
+      effectiveUserInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+    } catch {
+      effectiveUserInfo = {};
+    }
+  }
   const [searchQuery, setSearchQuery] = useState('');
   const [currentQuestionSet, setCurrentQuestionSet] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -395,7 +404,7 @@ const PulseEmbeddedOld = ({ userInfo }) => {
               lineHeight: '150%'
             }}
           >
-            Welcome, {userInfo?.given_name || userInfo?.name?.split(' ')[0] || 'User'}!
+            Welcome, {effectiveUserInfo?.given_name || effectiveUserInfo?.firstName || effectiveUserInfo?.name?.split(' ')[0] || 'User'}!
           </div>
         </div>
 

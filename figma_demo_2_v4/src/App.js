@@ -23,6 +23,14 @@ function AppContent() {
   const { isDarkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+  // Load persisted Okta user profile for passing to child pages
+  const userInfo = React.useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('userInfo') || '{}');
+    } catch {
+      return {};
+    }
+  }, []);
 
   // Ref for immediate sidebar conversation addition
   const addConversationImmediateRef = useRef(null);
@@ -657,7 +665,7 @@ function AppContent() {
         path="/" 
         element={
           <div className="App">
-            <Mainpage onSearch={navigateToResults} onNewChat={handleNewChat} />
+            <Mainpage onSearch={navigateToResults} onNewChat={handleNewChat} userInfo={userInfo} />
           </div>
         } 
       />
@@ -684,7 +692,7 @@ function AppContent() {
         path="/pulseembedded_old" 
         element={
           <div className="App">
-            <PulseEmbeddedOld />
+            <PulseEmbeddedOld userInfo={userInfo} />
           </div>
         } 
       />
