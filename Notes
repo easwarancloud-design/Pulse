@@ -17,3 +17,29 @@ https://workforceagent.slvr-dig-empmgt.awsdns.internal.das/resultpage?query=How%
   },
   "reference_links": []
 }
+
+#### encode aes 256
+
+import http.client
+import base64
+
+conn = http.client.HTTPSConnection("pty-emp-api.awse1.anthem.com")
+payload = "Here is the length content needs to be encrypted with Protegrity"
+headers = {
+  'Authorization': 'Basic U1JDX1BFUF9IUkxBS0U6Q3puWk87S305NWV8dUUuVmhDW0R0S3khTg==',
+  'Content-Type': 'application/octet-stream'
+}
+conn.request("POST", "/static/protect/aes256", payload, headers)
+res = conn.getresponse()
+data = res.read()
+enc_text = base64.b64encode(data).decode("ascii")
+print("Encrypted Code")
+print(enc_text)
+
+
+decoded_bytes = base64.b64decode(enc_text)
+conn.request("POST", "/static/unprotect/aes256", decoded_bytes, headers)
+res = conn.getresponse()
+data = res.read()
+print("Decrypted Code")
+print(data.decode('utf-8'))
