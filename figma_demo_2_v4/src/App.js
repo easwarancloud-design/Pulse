@@ -721,8 +721,8 @@ function App() {
           oktaAuth={oktaAuth}
           restoreOriginalUri={async (_oktaAuth, originalUri) => {
             const relativeUri = toRelativeUrl(originalUri || '/', window.location.origin);
-            // Use history replace so it behaves like a redirect back to the original route
-            window.history.replaceState(null, '', relativeUri);
+            // Force navigation to reliably restore the route post-auth
+            window.location.replace(relativeUri);
           }}
         >
           <Routes>
