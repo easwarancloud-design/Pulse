@@ -1,0 +1,19 @@
+https://workforceagent.slvr-dig-empmgt.awsdns.internal.das/resultpage?query=How%20do%20I%20submit%20my%20timesheet%3F&id=DOC_12345&codeName=enterprise_news_with_video__copy_&title=Enterprise%20News%20with%20Video
+
+
+ "message_type": "assistant",
+  "content": "<<warning>0</warning><termination>0</termination>>\n\nThe Paid Time Off (PTO) policy at Elevance Health is designed to provide associates with flexibility to manage their personal and professional lives while maintaining productivity. Here are some key points about the PTO policy:\n\n- **Eligibility**: The policy applies to regular part-time and full-time associates, student interns, and part-time associates working less than 20 hours per week. It does not apply to independent contractors, temporary associates, or those covered by the Services Contract Act (SCA).\n\n- **Accrual**: PTO accrual is based on completed years of service. For example, associates accrue 20 days/160 hours per year up to their 5th anniversary, and 25 days/200 hours per year after 5 years. California associates have higher maximum caps due to state requirements.\n\n- **Usage**: PTO can be used for both planned and unexpected events. Associates should request time off with as much notice as possible, but no less than one business day in advance.\n\n- **Carryover and Caps**: There is no time limit to use PTO, but accrual is capped based on years of service. Unused PTO may be forfeited upon termination unless required by state law.\n\n- **PTO Donations**: Associates may donate PTO to others undergoing hardship, subject to approval.\n\nFor specific questions or to manage your PTO, you can use the Time Off App in Workday or consult with your manager. If you need further assistance, feel free to reach out for direct help.\n\n**Reference Links:**\n<a href=\"https://pulse.elevancehealth.com/v3/page/usa_emp_savings_and_retirement__copy_\">Time Away</a>\n<a href=\"https://elevancehealth.service-now.com/esc?id=kb_article&sysparm_article=KB0070615\">Paid Time Off Policy</a>",
+  "chat_id": null,
+  "metadata": {
+    "timestamp": "2025-11-27T16:25:53.237Z",
+    "source": "workforce_agent_completion",
+    "question_context": "pto policy?",
+    "response_type": "complete",
+    "chat_type": "bot",
+    "streaming_completed": true,
+    "chat_id": "msg_1764260729104",
+    "session_id": "1764260753237",
+    "domain_id": "AG04333"
+  },
+  "reference_links": []
+}
