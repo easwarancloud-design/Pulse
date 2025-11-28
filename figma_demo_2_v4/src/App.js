@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Security, LoginCallback } from '@okta/okta-react';
-import { toRelativeUrl } from '@okta/okta-auth-js';
-import PrivateRoute from './PrivateRoute';
-import { oktaAuth } from './oktaConfig';
 import Mainpage from './Mainpage';
 import PulseMain from './PulseMain';
 import ChatPage from './ChatPage'; // Light mode
 import PulseEmbedded from './PulseEmbedded';
 import PulseEmbeddedOld from './PulseEmbeddedOld';
+import ChatIntegrationDemo from './components/ChatIntegrationDemo';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { hybridChatService } from './services/hybridChatService';
 import { conversationCacheService } from './services/conversationCacheService';
@@ -23,14 +20,6 @@ function AppContent() {
   const { isDarkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  // Load persisted Okta user profile for passing to child pages
-  const userInfo = React.useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('userInfo') || '{}');
-    } catch {
-      return {};
-    }
-  }, []);
 
   // Ref for immediate sidebar conversation addition
   const addConversationImmediateRef = useRef(null);
@@ -665,12 +654,17 @@ function AppContent() {
         path="/" 
         element={
           <div className="App">
-            <Mainpage onSearch={navigateToResults} onNewChat={handleNewChat} userInfo={userInfo} />
+            <Mainpage onSearch={navigateToResults} onNewChat={handleNewChat} />
           </div>
         } 
       />
       <Route 
-        /* demo-chat route removed */
+        path="/demo-chat" 
+        element={
+          <div className="App">
+            <ChatIntegrationDemo />
+          </div>
+        } 
       />
       <Route 
         path="/pulsemain" 
@@ -692,7 +686,7 @@ function AppContent() {
         path="/pulseembedded_old" 
         element={
           <div className="App">
-            <PulseEmbeddedOld userInfo={userInfo} />
+            <PulseEmbeddedOld />
           </div>
         } 
       />
@@ -725,29 +719,7 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
-        <Security
-          oktaAuth={oktaAuth}
-          restoreOriginalUri={async (_oktaAuth, originalUri) => {
-            const relativeUri = toRelativeUrl(originalUri || '/', window.location.origin);
-            // Force navigation to reliably restore the route post-auth
-            window.location.replace(relativeUri);
-          }}
-        >
-          <Routes>
-            {/* Explicit Okta callback route */}
-            <Route path="/login/callback" element={<LoginCallback />} />
-
-            {/* Protected application routes */}
-            <Route
-              path="/*"
-              element={
-                <PrivateRoute>
-                  <AppContent />
-                </PrivateRoute>
-              }
-            />
-          </Routes>
-        </Security>
+        <AppContent />
       </Router>
     </ThemeProvider>
   );

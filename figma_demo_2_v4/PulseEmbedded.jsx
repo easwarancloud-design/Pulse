@@ -1,7 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import ChatIcon from './components/ChatIcon';
-import { fetchPredefinedQuestions } from './services/predefinedQuestionsService';
-import hybridChatService from './services/hybridChatService';
 
 // Utility function to detect if running inside iframe
 const isInIframe = () => {
@@ -54,12 +52,13 @@ const handleFormSubmission = (query, type = 'manual', additionalData = {}) => {
   const formData = {
     query: query,
     type: type,
-    // Include any caller-provided data first
-    ...additionalData,
-    // Always include iframe context flags and trusted parent URL for back navigation
-    fromIframe: 'true',
-    parentUrl: (typeof window !== 'undefined' && window.__PULSE_PARENT_URL) || 'https://qa1-pulse-next.elevancehealth.com' || document.referrer,
-    selfUrl: window.location.href
+  //  parentUrl: window.parent.location.href,
+          selfUrl: window.location.href,
+          //'https://qa1-pulse-next.elevancehealth.com/v3/home',
+
+          //timestamp: new Date().toISOString(),
+    //source: getParentUrl(),
+    ...additionalData
   };
 
   console.log('📦 Complete form data to be sent:', formData);
@@ -109,34 +108,21 @@ const PulseEmbedded = ({ userInfo }) => {
   const [allThreads, setAllThreads] = useState([]);
   const [showAboutBox, setShowAboutBox] = useState(false);
 
-  // Predefined questions (dynamic, with fallback defaults)
-  const [allQuestions, setAllQuestions] = useState([
+  // Array of 9 predefined questions
+  const allQuestions = [
+    // Set 1 (0-2)
     'Share the latest company updates on AI developments',
     'What required learning do I have?',
-    'Whose in the office today?',
+    "What benefits enrollment deadlines are coming up?",
+    // Set 2 (3-5)
     'What are the upcoming project deadlines?',
     'Show me my recent performance reviews',
     'What are the current company policies?',
+    // Set 3 (6-8)
     'Find available meeting rooms for today',
     'What are the latest HR announcements?',
     'Show me my vacation balance and requests'
-  ]);
-
-  // Fetch predefined questions on mount (mimic PulseEmbeddedOld logic)
-  useEffect(() => {
-    const loadPredefinedQuestions = async () => {
-      const domainId = (userInfo?.domainId || userInfo?.domain_id) || 'AG04333';
-      try {
-        const questions = await fetchPredefinedQuestions(domainId);
-        if (Array.isArray(questions) && questions.length > 0) {
-          setAllQuestions(questions);
-        }
-      } catch (e) {
-        console.warn('⚠️ Failed to fetch predefined questions, using fallback set:', e.message);
-      }
-    };
-    loadPredefinedQuestions();
-  }, [userInfo?.domainId, userInfo?.domain_id]);
+  ];
 
   // Send dropdown data to parent window for overlay display
   const showDropdownInParent = (suggestions, inputRect) => {
@@ -189,28 +175,12 @@ const PulseEmbedded = ({ userInfo }) => {
   // Listen for dropdown selection from parent
   React.useEffect(() => {
     const handleMessage = (event) => {
-      if (event?.data?.type === 'PULSE_DROPDOWN_SELECTION') {
+      if (event.data.type === 'PULSE_DROPDOWN_SELECTION') {
         const suggestion = event.data.data;
         handleSuggestionClick(suggestion);
-        return;
-      }
-      if (event?.data?.type === 'PULSE_INTEGRATION_SUPPORTED') {
+      } else if (event.data.type === 'PULSE_INTEGRATION_SUPPORTED') {
         // Parent supports enhanced integration
         setParentSupportsBreakout(true);
-      }
-
-      // Capture parent URL from trusted origin for back navigation
-      try {
-        if (event.origin === 'https://qa1-pulse-next.elevancehealth.com' && event?.data?.PULSE_PAGE_URL) {
-          console.log('[iFrame] message event received:', event);
-          console.log('Message from parent:', event.data.PULSE_PAGE_URL);
-          // Store globally so form submission (outside component scope) can read it
-          if (typeof window !== 'undefined') {
-            window.__PULSE_PARENT_URL = event.data.PULSE_PAGE_URL;
-          }
-        }
-      } catch (_) {
-        // ignore
       }
     };
 
@@ -248,63 +218,30 @@ const PulseEmbedded = ({ userInfo }) => {
     window.location.href = resultUrl;
   };
 
-  // Load recent threads from API (with hybrid service fallback) - mimic PulseEmbeddedOld
-  const loadThreadsFromAPI = async () => {
-    const DEFAULT_DOMAIN_ID = (userInfo?.domainId || userInfo?.domain_id) || 'AG04333';
+  // Load threads from localStorage
+  const loadThreadsFromStorage = () => {
     try {
-      // Attempt direct API call first
-      const directResp = await fetch(`https://workforceagent.elevancehealth.com/api/conversations/user/${DEFAULT_DOMAIN_ID}?limit=10`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (directResp.ok) {
-        const raw = await directResp.json();
-        let conversations = raw;
-        if (raw?.conversations) conversations = raw.conversations;
-        if (raw?.data) conversations = raw.data;
-        if (Array.isArray(conversations) && conversations.length > 0) {
-          return conversations.map(conv => ({
-            id: conv.id,
-            title: conv.title || 'Untitled Conversation',
-            conversation: (conv.messages || []).map(msg => ({
-              type: msg.message_type,
-              text: msg.content
-            }))
-          }));
-        }
-      } else {
-        console.warn('⚠️ Direct API conversations fetch failed:', directResp.status);
+      const stored = localStorage.getItem('chatThreads');
+      if (stored) {
+        const threadsData = JSON.parse(stored);
+        const allThreadsList = [
+          ...(threadsData.today || []),
+          ...(threadsData.yesterday || []),
+          ...(threadsData.lastWeek || []),
+          ...(threadsData.last30Days || [])
+        ];
+        return allThreadsList;
       }
-    } catch (err) {
-      console.warn('⚠️ Direct API error (will try hybrid fallback):', err.message);
-    }
-
-    // Hybrid service fallback
-    try {
-      hybridChatService.setUserId(DEFAULT_DOMAIN_ID);
-      const conversations = await hybridChatService.getConversationHistory(10);
-      if (Array.isArray(conversations) && conversations.length > 0) {
-        return conversations.map(conv => ({
-          id: conv.id,
-          title: conv.title || 'Untitled Conversation',
-          conversation: (conv.messages || []).map(msg => ({
-            type: msg.message_type,
-            text: msg.content
-          }))
-        }));
-      }
-    } catch (hybridErr) {
-      console.warn('⚠️ Hybrid fallback failed:', hybridErr.message);
+    } catch (error) {
+      console.error('Error loading threads from localStorage:', error);
     }
     return [];
   };
 
-  useEffect(() => {
-    (async () => {
-      const threads = await loadThreadsFromAPI();
-      setAllThreads(Array.isArray(threads) ? threads : []);
-    })();
-  }, [userInfo?.domainId, userInfo?.domain_id]);
+  // Load threads on component mount
+  React.useEffect(() => {
+    setAllThreads(loadThreadsFromStorage());
+  }, []);
 
   // Get filtered suggestions based on search query
   const getFilteredSuggestions = (query) => {
@@ -314,8 +251,9 @@ const PulseEmbedded = ({ userInfo }) => {
     );
 
     if (!query.trim()) {
-      // Always show only 3 suggestions (user request)
-      return validThreads.slice(0, 3);
+      // Return 3 suggestions when no search query for iframe mode, 6 for normal mode
+      const maxSuggestions = isInIframe() ? 3 : 6;
+      return validThreads.slice(0, maxSuggestions);
     }
 
     // Filter threads by title containing the search query (case insensitive)
@@ -323,8 +261,9 @@ const PulseEmbedded = ({ userInfo }) => {
       thread.title.toLowerCase().includes(query.toLowerCase())
     );
 
-    // Always limit to 3 suggestions
-    return filtered.slice(0, 3);
+    // Limit suggestions based on context
+    const maxSuggestions = isInIframe() ? 3 : 6;
+    return filtered.slice(0, maxSuggestions);
   };
 
   // Handle input focus - show suggestions only if not already shown
@@ -704,55 +643,34 @@ const PulseEmbedded = ({ userInfo }) => {
                 </svg>
               </div>
             </button>
-            <div
-              className="ml-2 md:ml-4 flex-1"
+            <div className="flex justify-between items-center gap-2 md:gap-4 flex-1 ml-2 md:ml-4">
+                 {allQuestions
+          .slice(currentQuestionSet * 3, currentQuestionSet * 3 + 3)
+          .sort((a, b) => a.length - b.length)
+          .map((question, index) => (
+            <button
+              key={`${currentQuestionSet}-${index}`}
+              onClick={() => handleSuggestionClick(question)}
+              className="flex-1 flex items-center px-4 py-3 cursor-pointer hover:opacity-80 transition-opacity relative group"
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1.35fr', // first two smaller, third bigger
-                columnGap: '12px',
-                rowGap: '0px',
-                alignItems: 'stretch'
+                borderRadius: '100px',
+                border: '1px solid #44B8F3',
+                background: 'rgba(5, 15, 38, 0.40)'
               }}
             >
-              {(() => {
-                // Pick current 3 questions, sort by length ASC so last is longest
-                const current3 = allQuestions
-                  .slice(currentQuestionSet * 3, currentQuestionSet * 3 + 3)
-                  .filter(q => typeof q === 'string');
-                const displayQuestions = [...current3].sort((a, b) => a.length - b.length);
-                return displayQuestions.map((question, idx) => (
-                  <button
-                    key={`${currentQuestionSet}-${idx}`}
-                    onClick={() => handleSuggestionClick(question)}
-                    title={question}
-                    aria-label={question}
-                    className="flex items-center px-4 py-3 cursor-pointer hover:opacity-80 transition-opacity relative group"
-                    style={{
-                      borderRadius: '100px',
-                      border: '1px solid #44B8F3',
-                      background: 'rgba(5, 15, 38, 0.40)',
-                      width: '100%',
-                      minWidth: 0,
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <div
-                      className="text-white truncate w-full text-sm md:text-base text-center"
-                      style={{
-                        fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
-                        fontSize: 'clamp(12px, 2.5vw, 16px)',
-                        fontWeight: '400',
-                        lineHeight: 'normal',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
-                      }}
-                    >
-                      {question}
-                    </div>
-                  </button>
-                ));
-              })()}
+              <div
+                className="text-white truncate w-full text-sm md:text-base text-center"
+                style={{
+                  fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
+                  fontSize: 'clamp(12px, 2.5vw, 16px)',
+                  fontWeight: '400',
+                  lineHeight: 'normal'
+                }}
+              >
+                {question}
+              </div>
+            </button>
+          ))}
             </div>
           </div>
 
