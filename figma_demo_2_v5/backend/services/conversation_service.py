@@ -134,12 +134,16 @@ class ConversationService:
         if not plaintext:
             return plaintext
         if not self._p_encrypt:
+            logger.info("Protegrity encrypt unavailable; storing plaintext.")
             return plaintext
         try:
+            logger.debug(f"Encrypting content via Protegrity (len={len(plaintext)}).")
             raw = await asyncio.to_thread(self._p_encrypt, plaintext.encode('utf-8'))
-            return base64.b64encode(raw).decode('ascii')
+            enc_b64 = base64.b64encode(raw).decode('ascii')
+            logger.info(f"Encryption succeeded; ciphertext length={len(enc_b64)}.")
+            return enc_b64
         except Exception as e:
-            logger.warning(f"Encryption failed, storing plaintext fallback: {e}")
+            logger.error(f"Encryption failed; storing plaintext fallback. Error={e}")
             return plaintext
 
     async def _decrypt_text(self, enc_b64: Optional[str]) -> Optional[str]:
@@ -148,17 +152,23 @@ class ConversationService:
             return enc_b64
         if not self._p_decrypt:
             # No client configured; assume already plaintext
+            logger.info("Protegrity decrypt unavailable; assuming plaintext.")
             return enc_b64
         try:
             # Try base64 decode; if fails, it's likely plaintext
             enc_bytes = base64.b64decode(enc_b64, validate=False)
         except Exception:
+            logger.debug("Value not base64; treating as plaintext.")
             return enc_b64
         try:
+            logger.debug(f"Decrypting content via Protegrity (ciphertext len={len(enc_b64)}).")
             dec = await asyncio.to_thread(self._p_decrypt, enc_bytes)
-            return dec.decode('utf-8', errors='replace')
+            dec_text = dec.decode('utf-8', errors='replace')
+            logger.info(f"Decryption succeeded; plaintext length={len(dec_text)}.")
+            return dec_text
         except Exception:
             # Not a valid protected payload; treat as plaintext
+            logger.warning("Decryption failed; returning original value as plaintext.")
             return enc_b64
 
     async def _prepare_metadata_for_store(self, metadata: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
