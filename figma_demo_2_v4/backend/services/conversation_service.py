@@ -4,6 +4,7 @@ Handles business logic for conversation storage, retrieval, and caching
 Integrates Redis caching with MySQL persistence
 """
 import json
+import base64
 import logging
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
@@ -28,6 +29,15 @@ class ConversationService:
     def __init__(self):
         self.redis = None
         self.mysql = None
+        # Lazy import to avoid circulars during tooling/tests
+        try:
+            from protegrity_tester import encrypt as _p_encrypt, decrypt as _p_decrypt  # type: ignore
+            self._p_encrypt = _p_encrypt
+            self._p_decrypt = _p_decrypt
+        except Exception as e:
+            logger.warning(f"Protegrity client not available; encryption disabled: {e}")
+            self._p_encrypt = None
+            self._p_decrypt = None
     
     async def initialize(self):
         """Initialize service with database connections"""
@@ -72,7 +82,7 @@ class ConversationService:
             conversation_id=db_row['conversation_id'],
             chat_id=db_row.get('chat_id'),    # Frontend chat bubble ID
             message_type=MessageType(db_row['message_type']),
-            content=db_row['content'],    # content -> content
+            content=db_row['content'],    # content (may be encrypted; decrypt at fetch sites)
             metadata=json.loads(db_row.get('metadata', '{}')) if isinstance(db_row.get('metadata'), str) else (db_row.get('metadata') or {}),
             created_at=db_row['created_at'],
             updated_at=db_row.get('updated_at', db_row['created_at']),
@@ -104,7 +114,7 @@ class ConversationService:
             'conversation_id': message.conversation_id,
             'chat_id': message.chat_id,  # Frontend chat bubble ID
             'message_type': message.message_type.value,
-            'content': message.content,  # content -> content
+            'content': message.content,  # content (should already be transformed for DB)
             'metadata': json.dumps(message.metadata) if message.metadata else None,
             'token_count': getattr(message, 'token_count', None),
             'created_at': message.created_at,
@@ -112,6 +122,88 @@ class ConversationService:
             'feedback_text': getattr(message, 'feedback_text', None),
             'feedback_at': getattr(message, 'feedback_at', None)
         }
+
+    # ================================================
+    # ENCRYPTION / DECRYPTION HELPERS
+    # ================================================
+
+    async def _encrypt_text(self, plaintext: Optional[str]) -> Optional[str]:
+        """Encrypt plaintext using Protegrity and return base64-encoded ciphertext string.
+        If Protegrity client is not available or plaintext is empty, returns input.
+        """
+        if not plaintext:
+            return plaintext
+        if not self._p_encrypt:
+            logger.info("Protegrity encrypt unavailable; storing plaintext.")
+            return plaintext
+        try:
+            logger.debug(f"Encrypting content via Protegrity (len={len(plaintext)}).")
+            raw = await asyncio.to_thread(self._p_encrypt, plaintext.encode('utf-8'))
+            enc_b64 = base64.b64encode(raw).decode('ascii')
+            logger.info(f"Encryption succeeded; ciphertext length={len(enc_b64)}.")
+            return enc_b64
+        except Exception as e:
+            logger.error(f"Encryption failed; storing plaintext fallback. Error={e}")
+            return plaintext
+
+    async def _decrypt_text(self, enc_b64: Optional[str]) -> Optional[str]:
+        """Decrypt base64-encoded ciphertext using Protegrity; if not valid/enabled, return input."""
+        if enc_b64 is None:
+            return enc_b64
+        if not self._p_decrypt:
+            # No client configured; assume already plaintext
+            logger.info("Protegrity decrypt unavailable; assuming plaintext.")
+            return enc_b64
+        try:
+            # Try base64 decode; if fails, it's likely plaintext
+            enc_bytes = base64.b64decode(enc_b64, validate=False)
+        except Exception:
+            logger.debug("Value not base64; treating as plaintext.")
+            return enc_b64
+        try:
+            logger.debug(f"Decrypting content via Protegrity (ciphertext len={len(enc_b64)}).")
+            dec = await asyncio.to_thread(self._p_decrypt, enc_bytes)
+            dec_text = dec.decode('utf-8', errors='replace')
+            logger.info(f"Decryption succeeded; plaintext length={len(dec_text)}.")
+            return dec_text
+        except Exception:
+            # Not a valid protected payload; treat as plaintext
+            logger.warning("Decryption failed; returning original value as plaintext.")
+            return enc_b64
+
+    async def _prepare_metadata_for_store(self, metadata: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Clone metadata and encrypt only the 'question_context' value if present (string).
+        Adds a boolean flag 'question_context_enc' to aid future detection.
+        """
+        if not metadata:
+            return metadata
+        try:
+            new_meta = dict(metadata)
+        except Exception:
+            return metadata
+        qc = new_meta.get('question_context')
+        if isinstance(qc, str) and qc:
+            enc_qc = await self._encrypt_text(qc)
+            new_meta['question_context'] = enc_qc
+            new_meta['question_context_enc'] = True
+        return new_meta
+
+    async def _prepare_metadata_for_api(self, metadata: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Clone metadata and decrypt 'question_context' if it looks encrypted or flagged."""
+        if not metadata:
+            return metadata
+        try:
+            new_meta = dict(metadata)
+        except Exception:
+            return metadata
+        qc = new_meta.get('question_context')
+        flagged = bool(new_meta.get('question_context_enc'))
+        if isinstance(qc, str) and qc:
+            dec_qc = await self._decrypt_text(qc) if flagged or qc else qc
+            new_meta['question_context'] = dec_qc
+            # Keep the flag for internal use, or remove if you prefer not to expose
+            # new_meta.pop('question_context_enc', None)
+        return new_meta
     
     # ================================================
     # CONVERSATION CRUD OPERATIONS
@@ -367,13 +459,17 @@ class ConversationService:
                     current_metadata.update(message_data.metadata)
                     current_metadata['regenerated'] = True
                     current_metadata['regenerated_at'] = now.isoformat()
+
+                # Encrypt content and selective metadata for DB store
+                enc_content = await self._encrypt_text(message_data.content)
+                enc_metadata = await self._prepare_metadata_for_store(current_metadata)
                 
                 async with self.mysql() as (cursor, conn):
                     await cursor.execute("""
                         UPDATE wl_messages 
                         SET content = %s, metadata = %s, updated_at = %s
                         WHERE chat_id = %s AND conversation_id = %s
-                    """, (message_data.content, json.dumps(current_metadata), now, message_data.chat_id, conversation_id))
+                    """, (enc_content, json.dumps(enc_metadata), now, message_data.chat_id, conversation_id))
                     await conn.commit()
                     
                     # Get updated message
@@ -383,14 +479,19 @@ class ConversationService:
                     """, (message_data.chat_id, conversation_id))
                     updated_result = await cursor.fetchone()
                 
+                # Decrypt for API/cache
+                dec_content = await self._decrypt_text(updated_result.get('content'))
+                raw_meta = updated_result.get('metadata', {})
+                meta_dict = json.loads(raw_meta) if isinstance(raw_meta, str) and raw_meta else (raw_meta or {})
+                dec_meta = await self._prepare_metadata_for_api(meta_dict)
                 message = Message(
                     id=str(updated_result['id']),
                     conversation_id=str(updated_result['conversation_id']),
                     message_type=updated_result['message_type'],
-                    content=updated_result['content'],
+                    content=dec_content,
                     chat_id=updated_result.get('chat_id'),
-                    metadata=updated_result.get('metadata', {}),
-                    reference_links=updated_result.get('reference_links', []),
+                    metadata=dec_meta or {},
+                    reference_links=[],
                     liked=updated_result.get('liked', 0),
                     feedback_text=updated_result.get('feedback_text'),
                     created_at=updated_result['created_at'],
@@ -398,9 +499,11 @@ class ConversationService:
                 )
                 
                 # Invalidate cache
-                cache_key = f"conversation:{conversation_id}"
-                await self.redis.delete(cache_key)
-                logger.info(f"Updated message {message.id} (regenerated response)")
+                # Update cached messages list (replace by chat_id) for consistency
+                await self._replace_cached_message(conversation_id, message, match_chat_id=message_data.chat_id)
+                # Update cached conversation timestamp if present
+                await self._touch_cached_conversation(conversation_id)
+                logger.info(f"Updated message {message.id} (regenerated response) and refreshed cache")
                 
             else:
                 # New message - INSERT
@@ -417,8 +520,12 @@ class ConversationService:
                     updated_at=now
                 )
                 
-                # Insert message into MySQL using mapped columns
+                # Prepare encrypted payloads for DB
+                enc_content = await self._encrypt_text(message.content)
+                enc_metadata = await self._prepare_metadata_for_store(message.metadata)
                 db_data = self._map_api_to_db_message(message)
+                db_data['content'] = enc_content
+                db_data['metadata'] = json.dumps(enc_metadata) if enc_metadata else None
                 async with self.mysql() as (cursor, conn):
                     await cursor.execute("""
                         INSERT INTO wl_messages 
@@ -606,12 +713,16 @@ class ConversationService:
                     current_metadata['regenerated'] = True
                     current_metadata['regenerated_at'] = now.isoformat()
                 
+                # Encrypt new content and selective metadata for DB
+                enc_content = await self._encrypt_text(new_content)
+                enc_metadata = await self._prepare_metadata_for_store(current_metadata)
+
                 # Update the message content
                 await cursor.execute("""
                     UPDATE wl_messages 
                     SET content = %s, metadata = %s, updated_at = %s
                     WHERE chat_id = %s AND conversation_id = %s
-                """, (new_content, json.dumps(current_metadata), now, chat_id, conversation_id))
+                """, (enc_content, json.dumps(enc_metadata), now, chat_id, conversation_id))
                 
                 affected_rows = cursor.rowcount
                 await conn.commit()
@@ -625,14 +736,18 @@ class ConversationService:
             
             if affected_rows > 0 and updated_result:
                 # Create Message object
+                dec_content = await self._decrypt_text(updated_result.get('content'))
+                raw_meta = updated_result.get('metadata', {})
+                meta_dict = json.loads(raw_meta) if isinstance(raw_meta, str) and raw_meta else (raw_meta or {})
+                dec_meta = await self._prepare_metadata_for_api(meta_dict)
                 updated_message = Message(
                     id=str(updated_result['id']),
                     conversation_id=str(updated_result['conversation_id']),
                     message_type=updated_result['message_type'],
-                    content=updated_result['content'],
+                    content=dec_content,
                     chat_id=updated_result.get('chat_id'),
-                    metadata=updated_result.get('metadata', {}),
-                    reference_links=updated_result.get('reference_links', []),
+                    metadata=dec_meta or {},
+                    reference_links=[],
                     liked=updated_result.get('liked', 0),
                     feedback_text=updated_result.get('feedback_text'),
                     created_at=updated_result['created_at'],
@@ -642,10 +757,13 @@ class ConversationService:
                 # Update conversation's updated_at timestamp
                 await self._update_conversation_timestamp(conversation_id)
                 
-                # Invalidate cache to force refresh
-                cache_key = f"conversation:{conversation_id}"
-                await self.redis.delete(cache_key)
-                logger.info(f"Invalidated cache for conversation {conversation_id}")
+                # Replace message in cache instead of invalidating entire conversation cache
+                await self._replace_cached_message(conversation_id, updated_message, match_chat_id=chat_id)
+                # Touch cached conversation updated_at if present
+                await self._touch_cached_conversation(conversation_id)
+                # Refresh TTLs
+                await self._refresh_cache_expiry(conversation_id, domain_id)
+                logger.info(f"Updated cached message for chat_id={chat_id} without full invalidation")
                 
                 logger.info(f"Successfully updated message content for chat_id={chat_id}")
                 return updated_message
@@ -668,6 +786,99 @@ class ConversationService:
                 await conn.commit()
         except Exception as e:
             logger.error(f"Failed to update conversation timestamp: {e}")
+
+    # ================================================
+    # CHAT HISTORY / RECENT MESSAGES
+    # ================================================
+
+    async def get_recent_messages(self, conversation_id: str, domain_id: str, limit: int = 10, doc_id: Optional[str] = None) -> List[MessageResponse]:
+        """Return most recent messages for a conversation (Redis-first, fallback to DB).
+        Optional doc_id filter: if provided, will include only messages whose metadata contains
+        'doc_id' equal to the given value OR whose metadata lists include that doc_id.
+        Assumptions (due to lack of explicit schema):
+          - metadata may contain 'doc_id' str or list of 'doc_ids' under keys like 'documents', 'sources'.
+          - Filtering performed in-memory after retrieval.
+        """
+        # Validate conversation ownership quickly via DB (cheap single-row) if cache miss
+        try:
+            # Attempt to fetch messages from cache
+            cached_messages = await self._get_cached_messages(conversation_id)
+            if cached_messages:
+                messages = cached_messages
+            else:
+                # Fallback to DB (will decrypt inside helper)
+                messages = await self._get_messages_from_db(conversation_id)
+
+            # If conversation not found at all, ensure belonging domain
+            conversation = await self._get_conversation_from_db(conversation_id, domain_id)
+            if not conversation:
+                return []
+
+            # Apply doc_id filtering if requested
+            if doc_id:
+                filtered = []
+                for m in messages:
+                    md = m.metadata or {}
+                    if md.get('doc_id') == doc_id:
+                        filtered.append(m)
+                        continue
+                    # check common list containers
+                    for key in ('documents', 'sources', 'docs'):
+                        val = md.get(key)
+                        if isinstance(val, list) and doc_id in val:
+                            filtered.append(m)
+                            break
+                messages = filtered
+
+            # Take last N messages (most recent). Stored ascending by created_at.
+            recent = messages[-limit:] if limit and len(messages) > limit else messages
+
+            # Convert to MessageResponse (already decrypted in cache/DB fetch path)
+            response_list: List[MessageResponse] = []
+            for msg in recent:
+                try:
+                    response_list.append(MessageResponse(**msg.dict()))
+                except Exception as e:
+                    logger.warning(f"Failed to convert message {msg.id} to response: {e}")
+            # Refresh expiry since access occurred
+            await self._refresh_cache_expiry(conversation_id, domain_id)
+            return response_list
+        except Exception as e:
+            logger.error(f"Failed to get recent messages for {conversation_id}: {e}")
+            return []
+
+    # ================================================
+    # CACHE MUTATION HELPERS FOR MESSAGE UPDATES
+    # ================================================
+
+    async def _replace_cached_message(self, conversation_id: str, new_message: Message, match_chat_id: Optional[str] = None):
+        """Replace an existing cached message (by id or chat_id) with new_message. If cache absent, skip."""
+        try:
+            messages = await self._get_cached_messages(conversation_id)
+            if not messages:
+                return  # nothing to do
+            replaced = False
+            for idx, m in enumerate(messages):
+                if (match_chat_id and m.chat_id == match_chat_id) or m.id == new_message.id:
+                    messages[idx] = new_message
+                    replaced = True
+                    break
+            if replaced:
+                await self._cache_messages(conversation_id, messages)
+                logger.debug(f"Replaced cached message in conversation {conversation_id} (chat_id={match_chat_id})")
+        except Exception as e:
+            logger.warning(f"Failed to replace cached message for conversation {conversation_id}: {e}")
+
+    async def _touch_cached_conversation(self, conversation_id: str):
+        """Update only the updated_at timestamp of a cached conversation (if present) to now."""
+        try:
+            cached = await self._get_cached_conversation(conversation_id)
+            if not cached:
+                return
+            cached.updated_at = datetime.utcnow()
+            await self._cache_conversation(cached)
+        except Exception as e:
+            logger.debug(f"Failed to touch cached conversation {conversation_id}: {e}")
 
     # ================================================
     # SEARCH OPERATIONS
@@ -1202,7 +1413,24 @@ class ConversationService:
             
             messages = []
             for row in rows:
-                message = self._map_db_to_api_message(row)
+                # Decrypt content and selective metadata for API
+                raw_meta = row.get('metadata', {})
+                meta_dict = json.loads(raw_meta) if isinstance(raw_meta, str) and raw_meta else (raw_meta or {})
+                dec_content = await self._decrypt_text(row.get('content'))
+                dec_meta = await self._prepare_metadata_for_api(meta_dict)
+                message = Message(
+                    id=str(row['id']),
+                    conversation_id=row['conversation_id'],
+                    chat_id=row.get('chat_id'),
+                    message_type=MessageType(row['message_type']),
+                    content=dec_content,
+                    metadata=dec_meta or {},
+                    created_at=row['created_at'],
+                    updated_at=row.get('updated_at', row['created_at']),
+                    liked=row.get('liked', 0),
+                    feedback_text=row.get('feedback_text'),
+                    feedback_at=row.get('feedback_at')
+                )
                 messages.append(message)
             
             return messages

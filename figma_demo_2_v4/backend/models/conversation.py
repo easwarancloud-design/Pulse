@@ -267,3 +267,21 @@ def create_message_id() -> str:
 def create_reference_id() -> str:
     """Generate a reference link ID"""
     return f"ref_{generate_id()}"
+
+# ================================================
+# Chat History Models (for workforceagent/chat endpoint)
+# ================================================
+
+class ChatHistoryEntry(BaseModel):
+    """Simplified chat history entry for prompt building"""
+    role: str
+    content: str
+
+class ChatHistoryResponse(BaseModel):
+    """Response wrapper for recent chat history with formatted prompt entries"""
+    conversation_id: str
+    domain_id: str
+    limit: int
+    doc_id: Optional[str] = None
+    messages: List[MessageResponse]
+    chat_history: List[ChatHistoryEntry]

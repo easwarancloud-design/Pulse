@@ -2,19 +2,24 @@
 FastAPI routes for conversation management
 Provides REST endpoints for conversation CRUD operations, messaging, and search
 """
-from fastapi import APIRouter, HTTPException, Query, Depends, Path
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Query, Depends, Path, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Optional
-import logging
+import logging, json, time, re
+import requests
 
 # Import our models and services
 from models.conversation import (
     ConversationCreate, ConversationUpdate, ConversationResponse, ConversationSummary,
     MessageCreate, MessageResponse, BulkMessageCreate, BulkMessageResponse,
     SearchRequest, SearchResponse, UserSessionUpdate, UserSession,
-    MessageFeedbackUpdate, APIResponse, ErrorResponse
+    MessageFeedbackUpdate, APIResponse, ErrorResponse,
+    ChatHistoryResponse, ChatHistoryEntry
 )
 from services.conversation_service import conversation_service
+from Tasks.Workday.associate_info import store_associateinfo
+from Tasks.Workday.payroll_hr import store_payrollhr
+from modules.workflow_utils import jwt_auth
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +297,186 @@ async def update_message_content(
     except Exception as e:
         logger.error(f"Failed to update message content: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update message: {str(e)}")
+
+# ================================================
+###############################################
+# Unified Chat Endpoint (History + Streaming)
+###############################################
+
+async def _build_chat_history(conversation_id: str, domainid: str, limit: int = 10, doc_id: Optional[str] = None) -> List[dict]:
+    """Build chat history from cached recent messages (user/assistant only) filtered optionally by doc_id."""
+    try:
+        recent = await conversation_service.get_recent_messages(conversation_id, domainid, limit=limit, doc_id=doc_id)
+    except Exception:
+        return []
+    history: List[dict] = []
+    for msg in recent:
+        if msg.message_type in ("user", "assistant"):
+            history.append({"role": msg.message_type, "content": (msg.content or "").strip()})
+            if len(history) >= limit:
+                break
+    return history
+
+async def stream_response_wa(user_input: dict, conversation_id: Optional[str], domainid: str):
+    """Copied streaming logic (adapted) from original app.stream_response, renamed.
+    Does NOT alter the original function. Adds our cache TTL refresh after completion.
+    """
+    start_time = time.time()
+    logger.info(f"Stream started at: {start_time}")
+
+    full_response = ""
+    case_creation = ""
+    policy_links = ""
+
+    Initial_url = "https://elevancehealth.service-now.com/esc?id=sc_cat_item&sys_id=28c4c91b1bed049416f5db1dcd4bcbe4"
+    warning_url = "https://elevancehealth.service-now.com/esc?id=sc_cat_item&sys_id=c3ebae321bda801466e8ea0dad4bcb8c"
+    termination_url = "https://elevancehealth.service-now.com/esc?id=sc_cat_item&sys_id=615200c11b6c481016f5db1dcd4bcba0"
+
+    # Import workflow and helpers from app without modifying them
+    try:
+        from app import app_wk, clean_stream_text, clean_visible_text
+    except Exception as e:
+        yield f"Initialization error: {e}"
+        return
+
+    for output in app_wk.stream(user_input):
+        if isinstance(output, dict) and output.get("classify_task", {}).get("task") == "get_liveagent":
+            logger.info("Detected Live Agent Task")
+            yield "<<LiveAgent>>"
+            return
+
+        if isinstance(output, dict) and "generate_response" in output:
+            value = output["generate_response"]
+            headers = value["response"]["headers"]
+            payload = value["response"]["data"]
+            purl = value["response"]["url"]
+            pre_task = value["response"]["task"]
+
+            try:
+                response = requests.post(purl, headers=headers, data=payload, stream=True, verify=False, timeout=40)
+                logger.info(f"Stream connection latency: {time.time() - start_time:.2f}s")
+
+                if response.status_code != 200:
+                    logger.info(f"response Error text :{response.text}, response code: {response.status_code}")
+                    yield "Could not fetch response. Please check with Admin."
+                    return
+
+                buffer = ""
+                first_chunk_time = None
+
+                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                    if not chunk:
+                        continue
+
+                    pattern = r"\nid:.*?\n\n"
+                    text = re.sub(pattern, "", chunk, flags=re.DOTALL).replace("data: ", "").replace("Content-Length: 0", "")
+
+                    if not first_chunk_time:
+                        first_chunk_time = time.time()
+                        logger.info(f"First content received after: {first_chunk_time - start_time:.2f}s")
+
+                        if "<<" in text or ">>" in text:
+                            match = re.search(r'<<(.*?)>>(.*)', text, re.DOTALL)
+                            if match:
+                                buffer = f"<<{match.group(1).strip()}>>"
+                                buffer = buffer.replace("<<warning>1</warning>", f"<a href='{Initial_url}'>Initial Warning</a>\n<a href='{warning_url}'>Written Warning</a>")
+                                buffer = buffer.replace("<termination>1</termination>>", f"\n<a href='{termination_url}'>Request a Termination</a>")
+                                buffer = buffer.replace("<<warning>0</warning>", "").replace("<termination>0</termination>>", "")
+                                case_creation = buffer
+                                data = match.group(2).strip()
+                                full_response += data
+                                yield data
+                            else:
+                                full_response += text
+                                yield text
+                        else:
+                            full_response += text
+                            yield text
+                    else:
+                        full_response += text
+                        yield text
+
+                if pre_task == "get_hrpolicy":
+                    logger.info("Fetching HR policy links…")
+                    try:
+                        cleaned_response = clean_stream_text(full_response)
+                        policy_response = requests.post(
+                            "https://api.horizon.elevancehealth.com/v2/document/searches",
+                            headers=headers,
+                            data=json.dumps({"prompt": str(cleaned_response)}),
+                            verify=False,
+                            timeout=40
+                        )
+                        logger.info(f"HR policy API latency: {time.time() - start_time:.2f}s")
+
+                        if policy_response.status_code == 200:
+                            output_list = []
+                            for item in policy_response.json():
+                                if "document" in item:
+                                    tags = item["document"].get("tags", [])
+                                    title = next((t["value"] for t in tags if t.get("name") == "title"), None)
+                                    url = next((t["value"] for t in tags if t.get("name") == "url"), None)
+                                    if title and url:
+                                        output_list.append(f'<a href="{url}">{title}</a>')
+                            policy_links = "\n".join(list(dict.fromkeys(output_list))[:2])
+                            final_block = ""
+                            if clean_visible_text(policy_links):
+                                final_block += "\n\n**Reference Links:**\n" + policy_links
+                            if clean_visible_text(case_creation):
+                                final_block += "\n\n**Create a case using these links:**\n" + case_creation
+                            if final_block:
+                                yield final_block
+                        else:
+                            yield "⚠️ Failed to retrieve Reference links."
+                    except Exception as e:
+                        logger.info(f"Policy retrieval error: {str(e)}")
+                        yield "⚠️ Unable to fetch reference link."
+            except Exception as e:
+                logger.critical(f"Error connecting to downstream system: {str(e)}")
+                yield "Error in fetch response, Please try again."
+
+    logger.info(f"Total end-to-end duration: {time.time() - start_time:.2f}s")
+    logger.info(f"Question:{user_input['query']}")
+    logger.info(f"Response:{full_response}")
+
+    # Our cache TTL refresh (instead of legacy redis_client expirations)
+    try:
+        if conversation_id:
+            await conversation_service._refresh_cache_expiry(conversation_id, domainid)
+    except Exception:
+        pass
+
+
+@router.get("/workforceagent/chat")
+async def unified_chat(
+    request: Request,
+    conversation_id: str = Query(..., description="Conversation ID for history & cache refresh"),
+    token_payload=Depends(jwt_auth),
+    limit: int = Query(10, ge=1, le=100, description="Max recent messages to seed chat history"),
+    doc_id: Optional[str] = Query(None, description="Optional document ID filter applied to history")
+):
+    """Single endpoint combining history fetch + streaming response.
+    Returns a streaming response; history is used internally for prompt context.
+    Headers required: domainid, question.
+    Query optional: conversation_id (for cache refresh and history), limit.
+    """
+    domainid = request.headers.get("domainid")
+    question = request.headers.get("question")
+    if not domainid or not question:
+        raise HTTPException(status_code=400, detail="Missing 'domainid' or 'question' headers")
+    token_domainid = token_payload.get("sub")
+    if str(domainid).upper() != str(token_domainid).upper():
+        raise HTTPException(status_code=403, detail=f"Unauthorized domainid:{domainid}")
+    domainid_up = str(domainid).upper()
+    chat_history = await _build_chat_history(conversation_id, domainid_up, limit, doc_id)
+    user_input = {
+        "query": question,
+        "domainid": domainid_up,
+        "chat_history": chat_history,
+        "language": "en",
+        "doc_id": doc_id
+    }
+    return StreamingResponse(stream_response_wa(user_input, conversation_id, domainid_up), media_type="text/plain")
 
 @router.post("/conversations/{conversation_id}/messages/{message_id}/feedback")
 async def update_message_feedback(
