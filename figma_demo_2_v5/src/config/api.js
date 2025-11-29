@@ -15,7 +15,8 @@ export const API_BASE_URLS = {
 // API Endpoints
 export const API_ENDPOINTS = {
   // Workforce Agent endpoints
-  WORKFORCE_CHAT: `${API_BASE_URLS.WORKFORCE_AGENT}/workforceagent/chat`,
+  // Unified history+streaming endpoint (FastAPI router prefix /api)
+  WORKFORCE_CHAT: `${API_BASE_URLS.WORKFORCE_AGENT}/api/workforceagent/chat`,
   TOKEN: `${API_BASE_URLS.WORKFORCE_AGENT}/token`,
   USER_TO_AGENT: `${API_BASE_URLS.WORKFORCE_AGENT}/user/to/agent/servicenow`,
   PREDEFINED_QUESTIONS: `${API_BASE_URLS.WORKFORCE_AGENT}/api/predefined_questions`,

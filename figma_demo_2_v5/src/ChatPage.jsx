@@ -16,7 +16,8 @@ import DebugMessagesPanel from './components/DebugMessagesPanel';
 // Use assets from the public folder to avoid CRA import restrictions
 const ServiceNowIconImg = `${process.env.PUBLIC_URL}/icons/servicenow.png`;
 const WorkdayIconImg = `${process.env.PUBLIC_URL}/icons/workday_icon.png`;
-const PulseIconSvg = `${process.env.PUBLIC_URL}/icons/Pulse_icon.svg`;
+// Use updated Pulse icon for loading banner
+const PulseIconSvg = `${process.env.PUBLIC_URL}/icons/pulse_icon_new.png`;
 const OutlookIconImg = `${process.env.PUBLIC_URL}/icons/outlook_icon.png`;
 
 // Ensure question text is safe for HTTP headers (browsers block non-ASCII/newlines)
@@ -177,6 +178,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   // Reference links sidebar state
   const [showReferenceLinks, setShowReferenceLinks] = useState(false);
   const [currentReferenceLinks, setCurrentReferenceLinks] = useState([]);
+  // Sources panel tabs
+  const [activeSourcesTab, setActiveSourcesTab] = useState('sources'); // 'sources' | 'related'
+  const [relatedLinks, setRelatedLinks] = useState([]); // reserved for future related links data
   
   // Default/fallback domain ID. Prefer Okta-derived domainId from userInfo when available.
   const DEFAULT_DOMAIN_ID = 'AG04333';
@@ -532,6 +536,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         },
         userChatId // Pass user chat ID for database storage
       );
+      // Mark as saved to prevent duplicate saves later in the flow
+      window.userQuestionSaved = true;
 
       // 💾 ALSO SAVE TO LOCAL STORAGE (instant UI response)
       const activeConversationId = hybridChatService.getCurrentConversationId();
@@ -565,7 +571,11 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
     try {
       const token = await getToken(DEFAULT_DOMAIN_ID);
-      const response = await fetch(API_ENDPOINTS.WORKFORCE_CHAT, {
+      // Build chat URL with required query params
+      const activeConversationId = hybridChatService.getCurrentConversationId();
+      const limit = 10; // default seed size for history
+      const chatUrl = `${API_ENDPOINTS.WORKFORCE_CHAT}?conversation_id=${encodeURIComponent(activeConversationId || '')}&limit=${limit}`;
+      const response = await fetch(chatUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -674,7 +684,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         return;
       }
 
-      const reader = response.body.getReader();
+  const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let leftoverIdLine = '';
   let firstChunkReceived = false;
@@ -685,7 +695,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   let liveAgentPartialDetected = false;
 
       while (true) {
-        const { done, value } = await reader.read();
+  const { done, value } = await reader.read();
         if (done) break;
 
         if (!firstChunkReceived) {
@@ -835,7 +845,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                 chat_id: botChatId,
                 session_id: Date.now().toString(),
                 domain_id: domainid
-              }
+              },
+              botChatId
             );
             
             // Save assistant response to localStorage immediately
@@ -901,7 +912,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                 chat_id: botChatId,
                 session_id: Date.now().toString(),
                 domain_id: domainid
-              }
+              },
+              botChatId
             );
             window.assistantResponseSaved = true;
           } else if (window.assistantResponseSaved) {
@@ -920,10 +932,11 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                     chat_type: 'bot',
                     streaming_response: false,
                     timestamp: Date.now(),
-                    chat_id: lastBotMessage.id,
+                    chat_id: lastBotMessage.chat_id || botChatId,
                     session_id: Date.now().toString(),
                     domain_id: domainid
-                  }
+                  },
+                  lastBotMessage.chat_id || botChatId
                 );
                 window.assistantResponseSaved = true;
               } catch (fallbackError) {
@@ -1051,9 +1064,10 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             { 
               source: 'workforce_agent_finally',
               timestamp: Date.now(),
-              chat_id: botChatId,
+              chat_id: assistantMsg.chat_id || botChatId,
               fallback_save: true
-            }
+            },
+            assistantMsg.chat_id || botChatId
           );
           
           window.responseAlreadySaved = true;
@@ -2262,6 +2276,38 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       if (messageIndex === -1) return;
       
       const messageToReload = messages[messageIndex];
+      // Determine canonical feedback key (backend_id preferred)
+      const feedbackKey = messageToReload.backend_id || messageToReload.id;
+      // Clear any existing like/dislike feedback locally when regeneration starts
+      setLikedMessages(prev => {
+        const next = new Set(prev);
+        if (next.delete(feedbackKey)) {
+          saveFeedbackToStorage('liked', next);
+        }
+        return next;
+      });
+      setDislikedMessages(prev => {
+        const next = new Set(prev);
+        if (next.delete(feedbackKey)) {
+          saveFeedbackToStorage('disliked', next);
+        }
+        return next;
+      });
+      // Attempt to reset backend feedback to neutral (liked:0) best-effort
+      try {
+        const conversationId = hybridChatService.getCurrentConversationId();
+        const chatId = messageToReload.chat_id || messageToReload.original_chat_id || null;
+        if (conversationStorage && conversationId) {
+          await conversationStorage.updateMessageFeedbackImproved(
+            conversationId,
+            feedbackKey,
+            { liked: 0 },
+            chatId
+          );
+        }
+      } catch (resetErr) {
+        console.error('Feedback neutralization on regenerate failed (non-fatal):', resetErr);
+      }
       
       // Find the preceding user message
       let userQuestion = '';
@@ -2304,12 +2350,17 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       let response;
       try {
         // Always call the real workforce agent API for reload
-        response = await fetch(API_ENDPOINTS.WORKFORCE_CHAT, {
+        // Build chat URL with required query params for regenerate
+        const activeConversationId = hybridChatService.getCurrentConversationId();
+        const regenLimit = 10;
+        const regenUrl = `${API_ENDPOINTS.WORKFORCE_CHAT}?conversation_id=${encodeURIComponent(activeConversationId || '')}&limit=${regenLimit}`;
+        response = await fetch(regenUrl, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
-            question: userQuestion,
+            // Normalize header to strip problematic Unicode / control chars (regeneration previously failed here)
+            question: normalizeHeader(userQuestion),
             domainid: domainId.toUpperCase(),
           },
         });
@@ -2415,12 +2466,17 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
   };
 
+  // Toggle reference links sidebar; if already open, close on second click
   const handleReferenceLinks = (messageText, messageId) => {
     const links = extractReferenceLinks(messageText);
-    if (links.length > 0) {
-      setCurrentReferenceLinks(links);
-      setShowReferenceLinks(true);
+    if (!links.length) return;
+    if (showReferenceLinks) {
+      setShowReferenceLinks(false);
+      return;
     }
+    setCurrentReferenceLinks(links);
+    setActiveSourcesTab('sources');
+    setShowReferenceLinks(true);
   };
 
   return (
@@ -2655,9 +2711,20 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                         )}
                         {/* Show regenerating indicator */}
                         {message.isRegenerating && (
-                          <span className={`inline-flex ml-2 text-xs ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
-                            ðŸ”„ Regenerating...
-                          </span>
+                          <div className={`mt-2 ml-1 flex flex-col gap-1`}> 
+                            <div className={`inline-flex items-center gap-2 text-xs font-semibold ${isDarkMode ? 'text-[#44B8F3]' : 'text-[#2861BB]'}`}>
+                              <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                              <span>Regenerating...</span>
+                            </div>
+                            {/* Lightweight skeleton while new content streams in */}
+                            <div className="flex flex-col gap-1 mt-1">
+                              <div className={`h-2 rounded ${isDarkMode ? 'bg-[#1F3E81]' : 'bg-[#EAF5FF]'} animate-pulse w-40`}></div>
+                              <div className={`h-2 rounded ${isDarkMode ? 'bg-[#1F3E81]' : 'bg-[#EAF5FF]'} animate-pulse w-32`}></div>
+                            </div>
+                          </div>
                         )}
                       </div>
 
@@ -2741,37 +2808,61 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                      // Extra guard: hide icons for the message currently streaming
                      (message.chat_id ? (message.chat_id !== streamingMessageId) : (message.id !== streamingMessageId)) && (
                       <div className="flex items-center gap-2 py-1 relative mt-2">
-                        <button 
+                        {/* Like Button (icon fill only) */}
+                        <button
                           onClick={() => handleLike(message)}
-                          className={`p-1.5 hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} rounded relative`}
+                          className={`p-1.5 transition-colors ${likedMessages.has(message.id)
+                            ? 'text-[#2861BB]'
+                            : (isDarkMode ? 'text-[#A0BEEA] hover:text-[#2861BB]' : 'text-[#787777] hover:text-[#2861BB]')}`}
+                          title={likedMessages.has(message.id) ? 'Liked' : 'Like'}
                         >
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path fillRule="evenodd" clipRule="evenodd" d="M10.4523 1.85164C10.4644 2.59944 10.2347 3.33122 9.79726 3.93842C9.68341 4.11134 9.53661 4.26023 9.36523 4.37664L9.23284 4.87051H13.2395C13.8703 4.86951 14.4679 5.15291 14.8656 5.64171C15.2632 6.13052 15.4186 6.77245 15.2882 7.38855L13.7831 14.3445C13.5786 15.3107 12.7237 16.0016 11.7344 16H0V4.87051H3.1984L7.92282 0.196127L8.1458 0.00136137H8.42453C9.49319 -0.0381125 10.3959 0.785607 10.4523 1.85164ZM8.64751 1.45515L4.18091 5.8513V14.6088H11.7344C12.0666 14.6169 12.3582 14.3898 12.4312 14.0662L13.9155 7.11032C13.9619 6.90478 13.9125 6.6893 13.7811 6.52438C13.6498 6.35945 13.4506 6.26285 13.2395 6.2617H7.42808L7.665 5.3922L8.07612 3.82712L8.16671 3.54193L8.40362 3.41672C8.52613 3.33722 8.63058 3.23295 8.71022 3.11066C8.96206 2.74073 9.08453 2.29816 9.05863 1.85164C9.05863 1.636 8.94017 1.51775 8.64751 1.45515ZM2.78727 6.2617H1.39364V14.6088H2.78727V6.2617Z" fill={likedMessages.has(message.id) ? "#44B8F3" : (isDarkMode ? "#A0BEEA" : "#787777")}/>
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path fillRule="evenodd" clipRule="evenodd" d="M10.4523 1.85164C10.4644 2.59944 10.2347 3.33122 9.79726 3.93842C9.68341 4.11134 9.53661 4.26023 9.36523 4.37664L9.23284 4.87051H13.2395C13.8703 4.86951 14.4679 5.15291 14.8656 5.64171C15.2632 6.13052 15.4186 6.77245 15.2882 7.38855L13.7831 14.3445C13.5786 15.3107 12.7237 16.0016 11.7344 16H0V4.87051H3.1984L7.92282 0.196127L8.1458 0.00136137H8.42453C9.49319 -0.0381125 10.3959 0.785607 10.4523 1.85164ZM8.64751 1.45515L4.18091 5.8513V14.6088H11.7344C12.0666 14.6169 12.3582 14.3898 12.4312 14.0662L13.9155 7.11032C13.9619 6.90478 13.9125 6.6893 13.7811 6.52438C13.6498 6.35945 13.4506 6.26285 13.2395 6.2617H7.42808L7.665 5.3922L8.07612 3.82712L8.16671 3.54193L8.40362 3.41672C8.52613 3.33722 8.63058 3.23295 8.71022 3.11066C8.96206 2.74073 9.08453 2.29816 9.05863 1.85164C9.05863 1.636 8.94017 1.51775 8.64751 1.45515ZM2.78727 6.2617H1.39364V14.6088H2.78727V6.2617Z" />
                           </svg>
                         </button>
-                        <button 
+                        {/* Dislike Button (icon fill only, neutral when active) */}
+                        <button
                           onClick={() => handleDislike(message)}
-                          className={`p-1.5 hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} rounded`}
+                          className={`p-1.5 transition-colors font-semibold ${dislikedMessages.has(message.id)
+                            ? (isDarkMode ? 'text-[#E0E0E0]' : 'text-[#333333]')
+                            : (isDarkMode ? 'text-[#A0BEEA] hover:text-[#E0E0E0]' : 'text-[#787777] hover:text-[#333333]')}`}
+                          title={dislikedMessages.has(message.id) ? 'Disliked' : 'Dislike'}
                         >
-                          <svg width="16" height="17" viewBox="0 0 16 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path fillRule="evenodd" clipRule="evenodd" d="M8.42453 16.0268C9.49319 16.0664 10.3959 15.2412 10.4523 14.1733C10.4644 13.4242 10.2347 12.6911 9.79726 12.0828C9.68341 11.9096 9.53662 11.7604 9.36523 11.6438L9.23284 11.1491H13.2395C13.8703 11.1501 14.4679 10.8662 14.8656 10.3765C15.2632 9.88687 15.4186 9.24381 15.2882 8.62661L13.7831 1.65843C13.5786 0.69052 12.7237 -0.00156462 11.7344 6.66159e-06H0V11.1491H3.19839L7.92282 15.8317L8.1458 16.0268H8.42453ZM4.18091 10.1666V1.39364H11.7344C12.0666 1.38552 12.3582 1.61303 12.4312 1.93716L13.9155 8.90534C13.9619 9.11124 13.9125 9.32709 13.7811 9.49231C13.6498 9.65753 13.4506 9.7543 13.2395 9.75546H7.42808L7.665 10.6265L8.07612 12.1943L8.16671 12.48L8.40362 12.6054C8.52613 12.6851 8.63058 12.7895 8.71022 12.912C8.96206 13.2826 9.08453 13.726 9.05863 14.1733C9.05863 14.3893 8.94017 14.5078 8.64751 14.5705L4.18091 10.1666ZM1.39364 1.39364H2.78727V9.75546H1.39364V1.39364Z" fill={dislikedMessages.has(message.id) ? "#CB0042" : (isDarkMode ? "#A0BEEA" : "#787777")}/>
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path fillRule="evenodd" clipRule="evenodd" d="M8.42453 16.0268C9.49319 16.0664 10.3959 15.2412 10.4523 14.1733C10.4644 13.4242 10.2347 12.6911 9.79726 12.0828C9.68341 11.9096 9.53662 11.7604 9.36523 11.6438L9.23284 11.1491H13.2395C13.8703 11.1501 14.4679 10.8662 14.8656 10.3765C15.2632 9.88687 15.4186 9.24381 15.2882 8.62661L13.7831 1.65843C13.5786 0.69052 12.7237 -0.00156462 11.7344 6.66159e-06H0V11.1491H3.19839L7.92282 15.8317L8.1458 16.0268H8.42453ZM4.18091 10.1666V1.39364H11.7344C12.0666 1.38552 12.3582 1.61303 12.4312 1.93716L13.9155 8.90534C13.9619 9.11124 13.9125 9.32709 13.7811 9.49231C13.6498 9.65753 13.4506 9.7543 13.2395 9.75546H7.42808L7.665 10.6265L8.07612 12.1943L8.16671 12.48L8.40362 12.6054C8.52613 12.6851 8.63058 12.7895 8.71022 12.912C8.96206 13.2826 9.08453 13.726 9.05863 14.1733C9.05863 14.3893 8.94017 14.5078 8.64751 14.5705L4.18091 10.1666ZM1.39364 1.39364H2.78727V9.75546H1.39364V1.39364Z" />
                           </svg>
                         </button>
-                        <button 
-                          onClick={() => handleReload(message.id)}
-                          className={`p-1.5 hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} rounded`}
-                          title="Reload/Regenerate response"
+                        {/* Regenerate Button (shows spinner when active) */}
+                        <button
+                          onClick={() => !message.isRegenerating && handleReload(message.id)}
+                          disabled={message.isRegenerating}
+                          className={`p-1.5 transition-colors ${message.isRegenerating
+                            ? (isDarkMode ? 'text-[#44B8F3] opacity-80' : 'text-[#2861BB] opacity-80')
+                            : (isDarkMode ? 'text-[#A0BEEA] hover:text-[#2861BB]' : 'text-[#787777] hover:text-[#2861BB]')}
+                            ${message.isRegenerating ? 'cursor-not-allowed' : ''}`}
+                          title={message.isRegenerating ? 'Regenerating...' : 'Reload/Regenerate response'}
                         >
-                          <svg width="15" height="16" viewBox="0 0 15 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path fillRule="evenodd" clipRule="evenodd" d="M13.4513 10.4167L14.6667 10.9167C13.5183 13.8932 10.7039 16 7.33333 16C4.9567 16 2.8427 14.9245 1.40075 13.2708V15.3333H0.082397V10.6667H4.69663V12H2.08052C3.27528 13.5911 5.17299 14.6667 7.33333 14.6667C10.1606 14.6667 12.4909 12.9062 13.4513 10.4167ZM7.33333 0C9.6868 0 11.8214 1.05469 13.2659 2.72917V0.666668H14.5843V5.33333H9.97004V4H12.5655C11.3759 2.39323 9.47051 1.33333 7.33333 1.33333C4.50609 1.33333 2.1758 3.09375 1.21536 5.58333L0 5.08333C1.14841 2.10677 3.96278 0 7.33333 0Z" fill={isDarkMode ? "#A0BEEA" : "#787777"}/>
-                          </svg>
+                          {message.isRegenerating ? (
+                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 15 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                              <path fillRule="evenodd" clipRule="evenodd" d="M13.4513 10.4167L14.6667 10.9167C13.5183 13.8932 10.7039 16 7.33333 16C4.9567 16 2.8427 14.9245 1.40075 13.2708V15.3333H0.082397V10.6667H4.69663V12H2.08052C3.27528 13.5911 5.17299 14.6667 7.33333 14.6667C10.1606 14.6667 12.4909 12.9062 13.4513 10.4167ZM7.33333 0C9.6868 0 11.8214 1.05469 13.2659 2.72917V0.666668H14.5843V5.33333H9.97004V4H12.5655C11.3759 2.39323 9.47051 1.33333 7.33333 1.33333C4.50609 1.33333 2.1758 3.09375 1.21536 5.58333L0 5.08333C1.14841 2.10677 3.96278 0 7.33333 0Z" />
+                            </svg>
+                          )}
                         </button>
-                        <button 
+                        {/* Copy Button (icon fill only) */}
+                        <button
                           onClick={() => handleCopy(message.text, message.id)}
-                          className={`p-1.5 hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} rounded relative`}
+                          className={`p-1.5 transition-colors relative ${copiedMessage === message.id
+                            ? 'text-[#2861BB]'
+                            : (isDarkMode ? 'text-[#A0BEEA] hover:text-[#2861BB]' : 'text-[#787777] hover:text-[#2861BB]')}`}
+                          title={copiedMessage === message.id ? 'Copied' : 'Copy'}
                         >
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M0 0V0.727273V11.6364V12.3636H0.727273H2.90909V10.9091H1.45455V1.45455H10.9091V2.90909H12.3636V0.727273V0H11.6364H0.727273H0ZM3.63636 3.63636V4.36364V15.2727V16H4.36364H15.2727H16V15.2727V4.36364V3.63636H15.2727H4.36364H3.63636ZM5.09091 5.09091H14.5455V14.5455H5.09091V5.09091Z" fill={isDarkMode ? "#A0BEEA" : "#787777"}/>
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0 0V0.727273V11.6364V12.3636H0.727273H2.90909V10.9091H1.45455V1.45455H10.9091V2.90909H12.3636V0.727273V0H11.6364H0.727273H0ZM3.63636 3.63636V4.36364V15.2727V16H4.36364H15.2727H16V15.2727V4.36364V3.63636H15.2727H4.36364H3.63636ZM5.09091 5.09091H14.5455V14.5455H5.09091V5.09091Z" />
                           </svg>
                           {copiedMessage === message.id && (
                             <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded">
@@ -2783,21 +2874,16 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                         {/* Reference Links Icon */}
                         <button 
                           onClick={() => handleReferenceLinks(message.originalText || message.text, message.id)}
-                          className={`p-1.5 hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} rounded relative ${
-                            extractReferenceLinks(message.originalText || message.text).length === 0 
-                              ? 'opacity-30 cursor-not-allowed' 
-                              : ''
+                          className={`p-1.5 transition-colors relative ${
+                            extractReferenceLinks(message.originalText || message.text).length === 0
+                              ? 'opacity-30 cursor-not-allowed'
+                              : (isDarkMode ? 'text-[#A0BEEA] hover:text-[#2861BB]' : 'text-[#787777] hover:text-[#2861BB]')
                           }`}
                           disabled={extractReferenceLinks(message.originalText || message.text).length === 0}
                           title={extractReferenceLinks(message.originalText || message.text).length > 0 ? 'View Reference Links' : 'No reference links available'}
                         >
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M6.5 1C5.67157 1 5 1.67157 5 2.5C5 3.32843 5.67157 4 6.5 4H9.5C10.3284 4 11 3.32843 11 2.5C11 1.67157 10.3284 1 9.5 1H6.5ZM3.5 2.5C3.5 0.84315 4.84315 -0.5 6.5 -0.5H9.5C11.1569 -0.5 12.5 0.84315 12.5 2.5C12.5 4.15685 11.1569 5.5 9.5 5.5H6.5C4.84315 5.5 3.5 4.15685 3.5 2.5ZM6.5 12C5.67157 12 5 12.6716 5 13.5C5 14.3284 5.67157 15 6.5 15H9.5C10.3284 15 11 14.3284 11 13.5C11 12.6716 10.3284 12 9.5 12H6.5ZM3.5 13.5C3.5 11.8431 4.84315 10.5 6.5 10.5H9.5C11.1569 10.5 12.5 11.8431 12.5 13.5C12.5 15.1569 11.1569 16.5 9.5 16.5H6.5C4.84315 16.5 3.5 15.1569 3.5 13.5ZM8 6.75C8.41421 6.75 8.75 7.08579 8.75 7.5V8.5C8.75 8.91421 8.41421 9.25 8 9.25C7.58579 9.25 7.25 8.91421 7.25 8.5V7.5C7.25 7.08579 7.58579 6.75 8 6.75Z" 
-                              fill={extractReferenceLinks(message.originalText || message.text).length === 0 
-                                ? (isDarkMode ? "#555" : "#ccc") 
-                                : (isDarkMode ? "#A0BEEA" : "#787777")
-                              }
-                            />
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M6.5 1C5.67157 1 5 1.67157 5 2.5C5 3.32843 5.67157 4 6.5 4H9.5C10.3284 4 11 3.32843 11 2.5C11 1.67157 10.3284 1 9.5 1H6.5ZM3.5 2.5C3.5 0.84315 4.84315 -0.5 6.5 -0.5H9.5C11.1569 -0.5 12.5 0.84315 12.5 2.5C12.5 4.15685 11.1569 5.5 9.5 5.5H6.5C4.84315 5.5 3.5 4.15685 3.5 2.5ZM6.5 12C5.67157 12 5 12.6716 5 13.5C5 14.3284 5.67157 15 6.5 15H9.5C10.3284 15 11 14.3284 11 13.5C11 12.6716 10.3284 12 9.5 12H6.5ZM3.5 13.5C3.5 11.8431 4.84315 10.5 6.5 10.5H9.5C11.1569 10.5 12.5 11.8431 12.5 13.5C12.5 15.1569 11.1569 16.5 9.5 16.5H6.5C4.84315 16.5 3.5 15.1569 3.5 13.5ZM8 6.75C8.41421 6.75 8.75 7.08579 8.75 7.5V8.5C8.75 8.91421 8.41421 9.25 8 9.25C7.58579 9.25 7.25 8.91421 7.25 8.5V7.5C7.25 7.08579 7.58579 6.75 8 6.75Z" />
                           </svg>
                         </button>
                       </div>
@@ -2926,9 +3012,107 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         </div>
       </div>
       
-      {/* Reference Links Sidebar temporarily disabled while fixing JSX error
-      {showReferenceLinks && (<div />)}
-      */}
+      {/* Sources Sidebar (Reference Links) */}
+      {showReferenceLinks && (
+        <div
+          className="fixed right-0 top-0 h-full w-[360px] shadow-2xl border-l z-40 flex flex-col"
+          style={{
+            background: isDarkMode
+              ? 'linear-gradient(160deg, rgba(7,32,86,0.94) 0%, rgba(0,11,35,0.98) 100%)'
+              : '#FFFFFF',
+            borderColor: isDarkMode ? '#1F3E81' : '#E5E7EB'
+          }}
+        >
+          {/* Header Row with tabs */}
+          <div className={`flex items-center px-4 pt-3 pb-0 border-b ${isDarkMode ? 'border-[#1F3E81]' : 'border-gray-200'}`}>
+            {/* X close icon */}
+            <button
+              onClick={() => setShowReferenceLinks(false)}
+              aria-label="Close sources"
+              className={`mr-3 p-1 rounded hover:${isDarkMode ? 'bg-[#1F3E81]' : 'bg-gray-100'} transition-colors`}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13.3 1.7L12.3 0.7L7 6L1.7 0.7L0.7 1.7L6 7L0.7 12.3L1.7 13.3L7 8L12.3 13.3L13.3 12.3L8 7L13.3 1.7Z" fill={isDarkMode ? '#A0BEEA' : '#1a366f'} />
+              </svg>
+            </button>
+            {/* Tabs */}
+            <div className="flex items-center gap-6">
+              <button
+                className={`pb-2 text-sm font-semibold border-b-2 ${
+                  activeSourcesTab === 'sources'
+                    ? (isDarkMode ? 'border-[#2861BB] text-[#A0BEEA]' : 'border-[#2861BB] text-[#1a366f]')
+                    : 'border-transparent text-gray-500'
+                }`}
+                onClick={() => setActiveSourcesTab('sources')}
+              >
+                <span>Sources</span>
+                <span
+                  className={`ml-2 inline-flex items-center justify-center rounded-full text-[11px] leading-none px-1.5 py-0.5 ${
+                    isDarkMode ? 'bg-[#1F3E81] text-white' : 'bg-[#1a366f] text-white'
+                  }`}
+                >
+                  {currentReferenceLinks.length}
+                </span>
+              </button>
+              <button
+                className={`pb-2 text-sm font-semibold border-b-2 ${
+                  activeSourcesTab === 'related'
+                    ? (isDarkMode ? 'border-[#2861BB] text-[#A0BEEA]' : 'border-[#2861BB] text-[#1a366f]')
+                    : 'border-transparent text-gray-500'
+                }`}
+                onClick={() => setActiveSourcesTab('related')}
+              >
+                <span>Related Links</span>
+                <span
+                  className={`ml-2 inline-flex items-center justify-center rounded-full text-[11px] leading-none px-1.5 py-0.5 ${
+                    isDarkMode ? 'bg-[#1F3E81] text-[#A0BEEA]' : 'bg-[#EAF5FF] text-[#1a366f]'
+                  }`}
+                >
+                  {Array.isArray(relatedLinks) ? relatedLinks.length : 0}
+                </span>
+              </button>
+            </div>
+          </div>
+          {/* Body */}
+          <div className="p-4 overflow-y-auto flex-1">
+            {/* Descriptive text under tab (only for Sources) */}
+            {activeSourcesTab === 'sources' && (
+              <p className={`${isDarkMode ? 'text-[#A0BEEA]/80' : 'text-[#787777]'} text-sm leading-6 mb-6 text-left`}>
+                This section provides a list of references and materials used to generate the insights and information for this response.
+              </p>
+            )}
+            {activeSourcesTab === 'sources' ? (
+              Array.isArray(currentReferenceLinks) && currentReferenceLinks.length > 0 ? (
+              <ul className="space-y-5 text-left">
+                {currentReferenceLinks.map((l, idx) => (
+                  <li key={`${l.url}-${idx}`} className="pb-1">
+                    <a
+                      href={l.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`group inline-flex items-center gap-2 ${isDarkMode ? 'text-[#A0BEEA] hover:text-white' : 'text-[#2861BB] hover:text-[#1f4a9c]'} font-semibold underline decoration-2 underline-offset-[3px]`}
+                      title={l.title || l.url}
+                    >
+                      <span className="truncate max-w-[280px]">{l.title || l.url}</span>
+                      {/* Open in new tab icon */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-80 group-hover:opacity-100">
+                        <path d="M14 3H21V10" stroke={isDarkMode ? '#A0BEEA' : '#2861BB'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M10 14L21 3" stroke={isDarkMode ? '#A0BEEA' : '#2861BB'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M21 14V21H3V3H10" stroke={isDarkMode ? '#A0BEEA' : '#2861BB'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              ) : (
+                <div className={`${isDarkMode ? 'text-[#A0BEEA]' : 'text-gray-600'} text-sm`}>No sources found in this message.</div>
+              )
+            ) : (
+              <div className={`${isDarkMode ? 'text-[#A0BEEA]' : 'text-gray-600'} text-sm`}>No related links available.</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
     {/* Closing root container */}
   </div>

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, ArrowLeft, Sun, Edit2, Trash2, Check, X } from 'lucide-react';
 import ChatIcon from './components/ChatIcon';
-import JiraIcon from './components/JiraIcon';
-import ServiceNowIcon from './components/ServiceNowIcon';
+// Replacing vector components with branded PNG icons
+// (Jira & ServiceNow) sourced from public/icons for consistency with loading banner assets
+// import JiraIcon from './components/JiraIcon';
+// import ServiceNowIcon from './components/ServiceNowIcon';
 import { hybridChatService } from './services/hybridChatService';
 import { localConversationManager } from './services/localConversationManager';
 
@@ -756,8 +758,22 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                   </span>
                 </div>
               )}
-              {agent.type === 'jira' && <JiraIcon color={isDarkMode ? '#FFF' : '#2684FF'} />}
-              {agent.type === 'servicenow' && <ServiceNowIcon color={isDarkMode ? '#FFF' : '#62D84E'} />}
+              {agent.type === 'jira' && (
+                <img
+                  src={`${process.env.PUBLIC_URL}/icons/agent_jira.png`}
+                  alt="Jira Agent"
+                  className="w-7 h-7 rounded"
+                  style={{ objectFit: 'contain' }}
+                />
+              )}
+              {agent.type === 'servicenow' && (
+                <img
+                  src={`${process.env.PUBLIC_URL}/icons/agent_servicenow.png`}
+                  alt="ServiceNow Agent"
+                  className="w-7 h-7 rounded"
+                  style={{ objectFit: 'contain' }}
+                />
+              )}
 
               {/* Agent Name */}
               <span

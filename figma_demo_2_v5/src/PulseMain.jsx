@@ -7,8 +7,10 @@ import AISearchHero from './components/AISearchHero';
 // --- Icon Components ---
 // Custom/Branding Icon (The 'Pulse' logo icon)
 const PulseLogo = () => (
-  <svg className="w-6 h-6 mr-2" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12C2 17.523 6.477 22 12 22C17.523 22 22 17.523 22 12C22 6.477 17.523 2 12 2ZM12 4C7.582 4 4 7.582 4 12C4 16.418 7.582 20 12 20C16.418 20 20 16.418 20 12C20 7.582 16.418 4 12 4ZM10 16L14 12L10 8V16Z" fill="#3B82F6"/>
+  <svg className="w-7 h-7 mr-2" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-label="Pulse Logo" role="img">
+    <path d="M10 80 L100 10 L190 80 L170 100 L100 40 L30 100 Z" fill="#44B8F3" />
+    <rect x="40" y="85" width="120" height="105" fill="#122F65" rx="6" />
+    <rect x="85" y="115" width="30" height="45" fill="#ffffff" opacity="0.10" />
   </svg>
 );
 
@@ -24,9 +26,9 @@ const PrimaryNavbar = () => (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
       {/* Left side - Logo and Primary Links */}
       <div className="flex items-center space-x-6">
-        <a href="#" className="flex items-center text-indigo-600 font-bold text-lg">
+        <a href="#" className="flex items-center font-bold text-lg text-[#122F65]">
           <PulseLogo />
-          Pulse
+          <span className="ml-1 tracking-wide">Pulse</span>
         </a>
         {[
           'Our Company', 'Our Focus', 'Our Initiatives', 'Our Resources'
