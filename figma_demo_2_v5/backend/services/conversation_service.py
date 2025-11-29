@@ -499,9 +499,11 @@ class ConversationService:
                 )
                 
                 # Invalidate cache
-                cache_key = f"conversation:{conversation_id}"
-                await self.redis.delete(cache_key)
-                logger.info(f"Updated message {message.id} (regenerated response)")
+                # Update cached messages list (replace by chat_id) for consistency
+                await self._replace_cached_message(conversation_id, message, match_chat_id=message_data.chat_id)
+                # Update cached conversation timestamp if present
+                await self._touch_cached_conversation(conversation_id)
+                logger.info(f"Updated message {message.id} (regenerated response) and refreshed cache")
                 
             else:
                 # New message - INSERT
@@ -755,10 +757,13 @@ class ConversationService:
                 # Update conversation's updated_at timestamp
                 await self._update_conversation_timestamp(conversation_id)
                 
-                # Invalidate cache to force refresh
-                cache_key = f"conversation:{conversation_id}"
-                await self.redis.delete(cache_key)
-                logger.info(f"Invalidated cache for conversation {conversation_id}")
+                # Replace message in cache instead of invalidating entire conversation cache
+                await self._replace_cached_message(conversation_id, updated_message, match_chat_id=chat_id)
+                # Touch cached conversation updated_at if present
+                await self._touch_cached_conversation(conversation_id)
+                # Refresh TTLs
+                await self._refresh_cache_expiry(conversation_id, domain_id)
+                logger.info(f"Updated cached message for chat_id={chat_id} without full invalidation")
                 
                 logger.info(f"Successfully updated message content for chat_id={chat_id}")
                 return updated_message
@@ -781,6 +786,99 @@ class ConversationService:
                 await conn.commit()
         except Exception as e:
             logger.error(f"Failed to update conversation timestamp: {e}")
+
+    # ================================================
+    # CHAT HISTORY / RECENT MESSAGES
+    # ================================================
+
+    async def get_recent_messages(self, conversation_id: str, domain_id: str, limit: int = 10, doc_id: Optional[str] = None) -> List[MessageResponse]:
+        """Return most recent messages for a conversation (Redis-first, fallback to DB).
+        Optional doc_id filter: if provided, will include only messages whose metadata contains
+        'doc_id' equal to the given value OR whose metadata lists include that doc_id.
+        Assumptions (due to lack of explicit schema):
+          - metadata may contain 'doc_id' str or list of 'doc_ids' under keys like 'documents', 'sources'.
+          - Filtering performed in-memory after retrieval.
+        """
+        # Validate conversation ownership quickly via DB (cheap single-row) if cache miss
+        try:
+            # Attempt to fetch messages from cache
+            cached_messages = await self._get_cached_messages(conversation_id)
+            if cached_messages:
+                messages = cached_messages
+            else:
+                # Fallback to DB (will decrypt inside helper)
+                messages = await self._get_messages_from_db(conversation_id)
+
+            # If conversation not found at all, ensure belonging domain
+            conversation = await self._get_conversation_from_db(conversation_id, domain_id)
+            if not conversation:
+                return []
+
+            # Apply doc_id filtering if requested
+            if doc_id:
+                filtered = []
+                for m in messages:
+                    md = m.metadata or {}
+                    if md.get('doc_id') == doc_id:
+                        filtered.append(m)
+                        continue
+                    # check common list containers
+                    for key in ('documents', 'sources', 'docs'):
+                        val = md.get(key)
+                        if isinstance(val, list) and doc_id in val:
+                            filtered.append(m)
+                            break
+                messages = filtered
+
+            # Take last N messages (most recent). Stored ascending by created_at.
+            recent = messages[-limit:] if limit and len(messages) > limit else messages
+
+            # Convert to MessageResponse (already decrypted in cache/DB fetch path)
+            response_list: List[MessageResponse] = []
+            for msg in recent:
+                try:
+                    response_list.append(MessageResponse(**msg.dict()))
+                except Exception as e:
+                    logger.warning(f"Failed to convert message {msg.id} to response: {e}")
+            # Refresh expiry since access occurred
+            await self._refresh_cache_expiry(conversation_id, domain_id)
+            return response_list
+        except Exception as e:
+            logger.error(f"Failed to get recent messages for {conversation_id}: {e}")
+            return []
+
+    # ================================================
+    # CACHE MUTATION HELPERS FOR MESSAGE UPDATES
+    # ================================================
+
+    async def _replace_cached_message(self, conversation_id: str, new_message: Message, match_chat_id: Optional[str] = None):
+        """Replace an existing cached message (by id or chat_id) with new_message. If cache absent, skip."""
+        try:
+            messages = await self._get_cached_messages(conversation_id)
+            if not messages:
+                return  # nothing to do
+            replaced = False
+            for idx, m in enumerate(messages):
+                if (match_chat_id and m.chat_id == match_chat_id) or m.id == new_message.id:
+                    messages[idx] = new_message
+                    replaced = True
+                    break
+            if replaced:
+                await self._cache_messages(conversation_id, messages)
+                logger.debug(f"Replaced cached message in conversation {conversation_id} (chat_id={match_chat_id})")
+        except Exception as e:
+            logger.warning(f"Failed to replace cached message for conversation {conversation_id}: {e}")
+
+    async def _touch_cached_conversation(self, conversation_id: str):
+        """Update only the updated_at timestamp of a cached conversation (if present) to now."""
+        try:
+            cached = await self._get_cached_conversation(conversation_id)
+            if not cached:
+                return
+            cached.updated_at = datetime.utcnow()
+            await self._cache_conversation(cached)
+        except Exception as e:
+            logger.debug(f"Failed to touch cached conversation {conversation_id}: {e}")
 
     # ================================================
     # SEARCH OPERATIONS
