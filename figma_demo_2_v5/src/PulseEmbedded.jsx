@@ -101,7 +101,8 @@ const handleFormSubmission = (query, type = 'manual', additionalData = {}) => {
   return true; // Indicates form submission was used
 };
 
-const PulseEmbedded = ({ userInfo }) => {
+// Accept domainId directly (single source of truth from AppContent)
+const PulseEmbedded = ({ userInfo, domainId }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentQuestionSet, setCurrentQuestionSet] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -125,9 +126,9 @@ const PulseEmbedded = ({ userInfo }) => {
   // Fetch predefined questions on mount (mimic PulseEmbeddedOld logic)
   useEffect(() => {
     const loadPredefinedQuestions = async () => {
-      const domainId = (userInfo?.domainId || userInfo?.domain_id) || 'AG04333';
+      const effectiveDomainId = domainId || userInfo?.domainId || userInfo?.domain_id || 'AG04333';
       try {
-        const questions = await fetchPredefinedQuestions(domainId);
+        const questions = await fetchPredefinedQuestions(effectiveDomainId);
         if (Array.isArray(questions) && questions.length > 0) {
           setAllQuestions(questions);
         }
@@ -136,7 +137,7 @@ const PulseEmbedded = ({ userInfo }) => {
       }
     };
     loadPredefinedQuestions();
-  }, [userInfo?.domainId, userInfo?.domain_id]);
+  }, [domainId, userInfo?.domainId, userInfo?.domain_id]);
 
   // Send dropdown data to parent window for overlay display
   const showDropdownInParent = (suggestions, inputRect) => {
@@ -250,7 +251,7 @@ const PulseEmbedded = ({ userInfo }) => {
 
   // Load recent threads from API (with hybrid service fallback) - mimic PulseEmbeddedOld
   const loadThreadsFromAPI = async () => {
-    const DEFAULT_DOMAIN_ID = (userInfo?.domainId || userInfo?.domain_id) || 'AG04333';
+    const DEFAULT_DOMAIN_ID = domainId || userInfo?.domainId || userInfo?.domain_id || 'AG04333';
     try {
       // Attempt direct API call first
       const directResp = await fetch(`https://workforceagent.elevancehealth.com/api/conversations/user/${DEFAULT_DOMAIN_ID}?limit=10`, {

@@ -16,10 +16,10 @@ const AISearchHero = ({ onSearch }) => {
         width: '100%'
       }}
     >
-      {/* Iframe containing PulseEmbeddedOld - full width no padding */}
+      {/* Iframe containing PulseEmbeddedDemo - full width no padding */}
       <div className="w-full h-full relative" style={{ zIndex: 10 }}>
         <iframe
-          src="/pulseembedded_old"
+          src="/pulseembedded_demo"
           style={{
             width: '100%',
             height: '100%',
@@ -30,7 +30,7 @@ const AISearchHero = ({ onSearch }) => {
             maxWidth: '100%'
           }}
           scrolling="no"
-          title="Pulse Embedded Old Interface"
+          title="Pulse Embedded Demo Interface"
         />
       </div>
     </div>

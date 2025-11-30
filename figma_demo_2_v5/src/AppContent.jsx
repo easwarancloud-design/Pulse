@@ -4,7 +4,7 @@ import MainPage from './MainPage.jsx';
 import PulseMain from './PulseMain';
 import ChatPage from './ChatPage'; // Light mode
 import PulseEmbedded from './PulseEmbedded';
-import PulseEmbeddedOld from './PulseEmbeddedOld';
+import PulseEmbeddedDemo from './PulseEmbeddedDemo';
 import ChatIntegrationDemo from './components/ChatIntegrationDemo';
 import { useTheme } from './context/ThemeContext';
 import { hybridChatService } from './services/hybridChatService';
@@ -20,6 +20,16 @@ function AppContent() {
   const { isDarkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Centralized domainId resolution (single source of truth passed to embedded pages)
+  const resolvedDomainId = React.useMemo(() => {
+    try {
+      const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+      return userInfo.domainId || userInfo.domain_id || 'AG04333';
+    } catch {
+      return 'AG04333';
+    }
+  }, []);
 
   // Ref for immediate sidebar conversation addition
   const addConversationImmediateRef = useRef(null);
@@ -678,7 +688,7 @@ function AppContent() {
         path="/pulseembedded" 
         element={
           <div className="App">
-            <PulseEmbedded />
+            <PulseEmbedded domainId={resolvedDomainId} />
           </div>
         } 
       />
@@ -687,15 +697,15 @@ function AppContent() {
         path="/pulseembeded" 
         element={
           <div className="App">
-            <PulseEmbedded />
+            <PulseEmbedded domainId={resolvedDomainId} />
           </div>
         } 
       />
       <Route 
-        path="/pulseembedded_old" 
+        path="/pulseembedded_demo" 
         element={
           <div className="App">
-            <PulseEmbeddedOld />
+            <PulseEmbeddedDemo domainId={resolvedDomainId} />
           </div>
         } 
       />

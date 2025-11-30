@@ -3,9 +3,8 @@ import ChatIcon from './components/ChatIcon';
 import { fetchPredefinedQuestions } from './services/predefinedQuestionsService';
 import hybridChatService from './services/hybridChatService';
 
-// Legacy frozen copy of PulseEmbedded (kept unchanged for /pulseembedded_old)
-// Legacy component now also accepts domainId for consistency
-const PulseEmbeddedOld = ({ userInfo, domainId }) => {
+// Renamed legacy component: PulseEmbeddedDemo (formerly PulseEmbeddedOld)
+const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
   // Fallback: if no userInfo prop passed, attempt to load from localStorage (Okta profile persisted there)
   let effectiveUserInfo = userInfo;
   if (!effectiveUserInfo || Object.keys(effectiveUserInfo).length === 0) {
@@ -56,24 +55,50 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
     }
   };
 
-  // Dynamic hidden form submission (mirrors new PulseEmbedded behavior)
-  // Returns true if form submission executed (iframe breakout), false otherwise
+  // Dynamic hidden form submission (uses actual window/parent origin, no hardcoded host)
   const handleFormSubmission = (query, type = 'manual', additionalData = {}) => {
     if (!isInIframe()) {
       return false; // Outside iframe: caller will do normal navigation
     }
 
-    console.group('🚀 DYNAMIC FORM SUBMISSION STARTED (PulseEmbeddedOld)');
+    console.group('🚀 DYNAMIC FORM SUBMISSION STARTED (PulseEmbeddedDemo)');
     console.log('📝 Params:', { query, type, additionalData });
 
-  const form = document.createElement('form');
-  form.method = 'GET';
-    form.action = 'https://workforceagent.slvr-dig-empmgt.awsdns.internal.das/resultpage'; // Same target as new component
-    form.target = '_top'; // Break out of iframe
+    const form = document.createElement('form');
+    form.method = 'GET';
+    // Determine target origin: prefer parent window origin if accessible, else referrer, else current origin
+    let targetOrigin = window.location.origin;
+    try {
+      // Same-origin parent available
+      if (window.parent && window.parent.location && window.parent.location.origin) {
+        targetOrigin = window.parent.location.origin;
+      } else if (document.referrer) {
+        targetOrigin = new URL(document.referrer).origin;
+      }
+    } catch (_) {
+      // Cross-origin access blocked; fall back to referrer or current origin
+      try {
+        if (document.referrer) targetOrigin = new URL(document.referrer).origin;
+      } catch (__) {
+        targetOrigin = window.location.origin;
+      }
+    }
+
+    form.action = `${targetOrigin}/resultpage`;
+    form.target = '_top';
     form.style.display = 'none';
 
-    // Parent URL may have been stashed globally by integration messaging in newer flows
-    const parentUrl = (typeof window !== 'undefined' && window.__PULSE_PARENT_URL) || document.referrer || window.location.href;
+    // Use top-level parent URL directly when accessible; fallback to referrer/current URL
+    let parentUrl = window.location.href;
+    try {
+      if (window.parent && window.parent.location && window.parent.location.href) {
+        parentUrl = window.parent.location.href;
+      } else if (document.referrer) {
+        parentUrl = document.referrer;
+      }
+    } catch (_) {
+      parentUrl = document.referrer || window.location.href;
+    }
 
     const formData = {
       query,
@@ -93,8 +118,7 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
     });
 
     document.body.appendChild(form);
-    console.log('✅ Hidden form appended. Submitting...');
-    // Match PulseEmbedded delay to ease debugging/parity
+    console.log('✅ Hidden form appended. Submitting in 2s...');
     setTimeout(() => {
       console.log('🚀 Submitting form now - navigating to results page!');
       form.submit();
@@ -141,17 +165,7 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
       } else if (event?.data?.type === 'PULSE_INTEGRATION_SUPPORTED') {
         setParentSupportsBreakout(true);
       }
-
-      // Capture parent URL from trusted origin for back navigation (parity with PulseEmbedded)
-      try {
-        if (event.origin === 'https://qa1-pulse-next.elevancehealth.com' && event?.data?.PULSE_PAGE_URL) {
-          if (typeof window !== 'undefined') {
-            window.__PULSE_PARENT_URL = event.data.PULSE_PAGE_URL;
-          }
-        }
-      } catch (_) {
-        // ignore cross-origin issues
-      }
+      // Removed parent URL capture via postMessage: we now rely on window.parent.location/top
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
@@ -163,7 +177,7 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
     // Attempt iframe breakout via hidden form first
     if (handleFormSubmission(question, type || 'manual', {
       conversationId: conversationId || '',
-      fromPulseEmbeddedOld: 'true'
+      fromPulseEmbeddedDemo: 'true'
     })) {
       return; // Successful form submission
     }
@@ -182,33 +196,18 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
 
   const loadThreadsFromStorage = async () => {
     try {
-      // Simple fallback: just try to call the API directly
-  const DEFAULT_DOMAIN_ID = domainId || 'AG04333';
-      
+      const DEFAULT_DOMAIN_ID = domainId || 'AG04333';
       try {
-        // Test 1: Try the user conversations endpoint directly
         const response = await fetch(
           `https://workforceagent.elevancehealth.com/api/conversations/user/${DEFAULT_DOMAIN_ID}?limit=10`,
-          {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
+          { method: 'GET', headers: { 'Content-Type': 'application/json' } }
         );
-
         if (response.ok) {
           const data = await response.json();
-          // Handle different response formats
           let conversations = data;
-          if (data && data.conversations) {
-            conversations = data.conversations;
-          } else if (data && data.data) {
-            conversations = data.data;
-          }
-          
+          if (data && data.conversations) conversations = data.conversations;
+          else if (data && data.data) conversations = data.data;
           if (Array.isArray(conversations) && conversations.length > 0) {
-            // Convert to thread format
             return conversations.map(conv => ({
               id: conv.id,
               title: conv.title || 'Untitled Conversation',
@@ -222,17 +221,14 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
           const errorText = await response.text();
           console.error('❌ Direct API failed:', response.status, errorText);
         }
-
       } catch (directAPIError) {
         console.error('❌ Direct API call failed:', directAPIError);
       }
 
-      // Test 2: Try using the hybrid service as fallback
+      // Hybrid service fallback
       try {
         hybridChatService.setUserId(DEFAULT_DOMAIN_ID);
-        
         const conversations = await hybridChatService.getConversationHistory(10);
-        
         if (conversations && conversations.length > 0) {
           return conversations.map(conv => ({
             id: conv.id,
@@ -248,15 +244,8 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
       }
 
       return [];
-      
     } catch (error) {
       console.error('❌ Error loading threads from API:', error);
-      console.error('❌ Full error details:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
-      // Return empty array instead of null to prevent UI crashes
       return [];
     }
   };
@@ -271,19 +260,18 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
         setAllThreads([]);
       }
     };
-    
     loadThreads();
   }, []);
 
   const getFilteredSuggestions = (query) => {
-    // Ensure allThreads is an array before proceeding
-    const threads = Array.isArray(allThreads) ? allThreads : [];
-    
+    // Exclude placeholder threads titled "New Chat" from dropdown
+    const threadsRaw = Array.isArray(allThreads) ? allThreads : [];
+    const threads = threadsRaw.filter(t => t?.title && t.title.trim() !== 'New Chat');
+
     if (!query.trim()) {
       const maxSuggestions = isInIframe() ? 3 : 6;
       return threads.slice(0, maxSuggestions);
     }
-    
     const filtered = threads.filter(thread =>
       thread.title && thread.title.toLowerCase().includes(query.toLowerCase())
     );
@@ -328,7 +316,6 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
     }
 
     if (typeof suggestion === 'string') {
-      // Predefined question suggestion
       if (handleFormSubmission(suggestion, 'predefined', { fromSuggestion: 'true' })) {
         setSearchQuery('');
         return;
@@ -336,7 +323,6 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
       setSearchQuery('');
       navigateToResults(suggestion, null, 'predefined');
     } else {
-      // Thread suggestion
       if (handleFormSubmission(suggestion.title, 'thread', {
         conversationId: suggestion.id,
         fromThread: 'true'
@@ -710,5 +696,4 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
   );
 };
 
-export default PulseEmbeddedOld;
-
+export default PulseEmbeddedDemo;

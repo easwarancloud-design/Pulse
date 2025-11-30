@@ -285,6 +285,11 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
               if (currentThread) {
                 currentThread.title = apiTitle;
                 stableTitleRef.current = apiTitle;
+                // Lock title to prevent future fallback overwrites
+                try {
+                  if (!window.__titleLocked) window.__titleLocked = {};
+                  window.__titleLocked[backendConversationId] = true;
+                } catch {}
                 if (onThreadUpdate) {
                   onThreadUpdate({ ...currentThread, title: apiTitle });
                 }
@@ -382,6 +387,11 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
               localConversationManager.updateConversationTitle(conversationId, apiTitle);
               // Remember authoritative title
               stableTitleRef.current = apiTitle;
+              // Lock title to prevent future fallback overwrites
+              try {
+                if (!window.__titleLocked) window.__titleLocked = {};
+                window.__titleLocked[conversationId] = true;
+              } catch {}
 
               // 🔄 Invalidate caches so lists and loader return fresh title
               try {
@@ -424,7 +434,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
 
     // 🎯 Update title if this is the first question in a "New Chat"
-    if (currentThread && currentThread.title === 'New Chat' && inputText.trim()) {
+    if (currentThread && currentThread.title === 'New Chat' && inputText.trim() && !(window.__titleLocked && window.__titleLocked[currentThread.id])) {
       // 🎯 Use temporary fallback title immediately (non-blocking)
   const tempQuestionTitle = generateFallbackTitle(inputText);
   // Remember we set a temporary title until API title arrives
@@ -471,6 +481,11 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           currentThread.title = apiTitle;
           // Remember authoritative title
           stableTitleRef.current = apiTitle;
+          // Lock title to prevent future fallback overwrites
+          try {
+            if (!window.__titleLocked) window.__titleLocked = {};
+            window.__titleLocked[currentThread.id] = true;
+          } catch {}
           // Notify App.js
           if (onThreadUpdate) {
             onThreadUpdate({ ...currentThread, title: apiTitle });
