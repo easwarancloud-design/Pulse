@@ -52,22 +52,22 @@ function AppContent() {
           };
           setCurrentThread(newThread);
         } else if (type === 'manual') {
-          // Manual input - create new chat with immediate response
-          setUserQuestion('');
+          // Manual input coming from embedded/main page.
+          // Root cause of duplication: we previously pre-populated the thread with the user message AND
+          // ChatPage's initializer added another user+assistant placeholder, then the thread-change effect
+          // injected a fallback/welcome message. Net result: two user messages + two assistant messages + two chats.
+          // Fix: do NOT pre-populate conversation here. Instead pass the question via userQuestion and let ChatPage
+          // create the initial user+assistant pair exactly once and stream the response. Keep isNewChat=false so
+          // ChatPage auto-trigger logic (manual question path) still fires; provide an empty conversation to avoid
+          // the thread-change effect injecting an extra welcome/fallback message (guard added in ChatPage).
+          setUserQuestion(query);
           setIsNewChat(false);
           setIsNewChatActive(false);
-          
-          const newThread = {
+          setCurrentThread({
             id: 'thread_' + Date.now(),
-            title: query.length > 50 ? query.substring(0, 50) + '...' : query,
-            conversation: [
-              {
-                type: 'user',
-                text: query
-              }
-            ]
-          };
-          setCurrentThread(newThread);
+            title: 'New Chat',
+            conversation: []
+          });
         }
       }
     }
@@ -676,6 +676,15 @@ function AppContent() {
       />
       <Route 
         path="/pulseembedded" 
+        element={
+          <div className="App">
+            <PulseEmbedded />
+          </div>
+        } 
+      />
+      {/** Alias route to handle common typo `/pulseembeded` (single 'd') */}
+      <Route 
+        path="/pulseembeded" 
         element={
           <div className="App">
             <PulseEmbedded />

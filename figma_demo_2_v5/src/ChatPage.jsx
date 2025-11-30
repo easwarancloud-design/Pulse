@@ -187,7 +187,13 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   const RESOLVED_DOMAIN_ID = DEFAULT_DOMAIN_ID;
 
   const sendWorkforceAgentMessage = async (inputText, replaceExisting = false) => {
-    if (loading) return; // Prevent duplicate calls
+    // Global reentrancy guard to prevent double-trigger from overlapping effects/handlers
+    if (loading) return; // Prevent duplicate calls based on local state
+    if (window.__sendInProgress && (Date.now() - (window.__sendInProgress.startedAt || 0)) < 30000) {
+      // A send is already in progress within 30s window; skip re-entry
+      return;
+    }
+    window.__sendInProgress = { startedAt: Date.now() };
     
   setLoading(true);
   setHasFirstChunk(false); // reset banner state at start of every send
@@ -242,7 +248,12 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       // Check if we need to create a new conversation
       const hasActiveConversation = hybridChatService.getCurrentConversationId();
       const hasExistingMessages = currentThread?.conversation && currentThread.conversation.length > 0;
-      const shouldCreateNewConversation = (isNewChat && !hasExistingMessages) || !hasActiveConversation;
+      // Prevent duplicate conversation creation within the same send by using a volatile guard
+      if (!window.__creatingConversationGuard) {
+        window.__creatingConversationGuard = { startedAt: Date.now(), id: null };
+      }
+      const creatingGuardActive = window.__creatingConversationGuard && (Date.now() - window.__creatingConversationGuard.startedAt) < 30000; // 30s
+      const shouldCreateNewConversation = ((isNewChat && !hasExistingMessages) || !hasActiveConversation) && !window.__creatingConversationGuard.id;
       
   if (shouldCreateNewConversation) {
         
@@ -250,11 +261,15 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         const tempTitle = generateFallbackTitle(inputText);
         
         // If we already have a currentThread from "New Chat", use it and create backend conversation
-        if (currentThread && currentThread.title === 'New Chat') {
+  if (currentThread && currentThread.title === 'New Chat') {
           // DEBUG removed
           
           // Create the conversation in the backend with the temporary title first
           const backendConversationId = await hybridChatService.startNewConversation(tempTitle);
+          // Record guard to avoid a second startNewConversation in the same flow
+          if (backendConversationId) {
+            window.__creatingConversationGuard.id = backendConversationId;
+          }
           
           // 🎯 Generate proper title via API in background (non-blocking)
           generateConversationTitle(inputText, conversationStorage.defaultUserId).then(apiTitle => {
@@ -346,6 +361,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         } else {
           // Only create new conversation if we don't have a "New Chat" thread
           const conversationId = await hybridChatService.startNewConversation(tempTitle);
+          if (conversationId) {
+            window.__creatingConversationGuard.id = conversationId;
+          }
           
           // 🎯 Add to sidebar - only for truly new conversations
           if (addConversationImmediateRef.current && conversationId) {
@@ -1043,6 +1061,14 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     } finally {
       setLoading(false);
       setStreamingMessageId(null);
+      // Clear global reentrancy guard
+      try { window.__sendInProgress = null; } catch {}
+      // Reset creation guard after send completes to allow future new chats
+      try {
+        if (window.__creatingConversationGuard) {
+          window.__creatingConversationGuard = null;
+        }
+      } catch {}
       
       // ðŸ”„ Ensure response is saved even if there were errors during streaming
       try {
@@ -1615,6 +1641,20 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     if (isThreadSwitch && uiLen > 0 && backendLen === 0 && justSent) {
     // Skip reset due to recent send
       return;
+    }
+    // NEW GUARD (duplication fix): If we have an empty backend conversation (length 0) BUT the UI already
+    // contains a synthesized user + assistant placeholder pair (assistant incomplete), do NOT inject any
+    // welcome/fallback messages. This prevents double user/question and double assistant greeting when
+    // manual queries navigate from the main/embedded page.
+    if (
+      backendLen === 0 &&
+      uiLen >= 2 &&
+      messages[0]?.type === 'user' &&
+      messages[1]?.type === 'assistant' &&
+      messages[1]?.completed === false
+    ) {
+      lastLoadedThreadIdRef.current = currentId; // mark as loaded to avoid repeated checks
+      return; // Skip further mutation; existing placeholder will be replaced by streaming response
     }
     // If switching to a new thread with no messages yet (loading), clear UI instead of showing previous conversation
     if (isThreadSwitch && backendLen === 0) {

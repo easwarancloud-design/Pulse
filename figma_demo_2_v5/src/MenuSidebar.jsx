@@ -503,20 +503,20 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         hybridChatService.setUserId(userId);
       }
       
+      // Prepare remaining thread list BEFORE state update for fallback selection
+      const remainingThreadsFlat = [
+        ...(Array.isArray(allThreads.today) ? allThreads.today : []),
+        ...(Array.isArray(allThreads.yesterday) ? allThreads.yesterday : []),
+        ...(Array.isArray(allThreads.lastWeek) ? allThreads.lastWeek : []),
+        ...(Array.isArray(allThreads.last30Days) ? allThreads.last30Days : [])
+      ].filter(t => t && t.id !== threadId);
+
       // Remove from local state immediately - ALWAYS delete from frontend
       setAllThreads(prevThreads => {
-        // Ensure prevThreads is an object with the correct structure
         if (!prevThreads || typeof prevThreads !== 'object') {
           console.warn('⚠️ prevThreads is not an object:', prevThreads);
-          return {
-            today: [],
-            yesterday: [],
-            lastWeek: [],
-            last30Days: []
-          };
+          return { today: [], yesterday: [], lastWeek: [], last30Days: [] };
         }
-        
-        // Filter out the deleted thread from all categories
         return {
           today: Array.isArray(prevThreads.today) ? prevThreads.today.filter(thread => thread.id !== threadId) : [],
           yesterday: Array.isArray(prevThreads.yesterday) ? prevThreads.yesterday.filter(thread => thread.id !== threadId) : [],
@@ -525,6 +525,20 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         };
       });
       console.log('✅ Thread removed from frontend UI permanently:', threadId);
+
+      // If the deleted thread was the active one, choose fallback
+      if (currentActiveThread && currentActiveThread.id === threadId) {
+        try { hybridChatService.clearActiveConversation(); } catch {}
+        if (remainingThreadsFlat.length > 0) {
+          // Select the most recently created (first in today if available, else first in flat list)
+          const nextThread = remainingThreadsFlat[0];
+          console.log('➡️ Selecting fallback thread after delete:', nextThread.id);
+          onThreadSelect && onThreadSelect(nextThread);
+        } else {
+          console.log('🆕 No remaining threads, starting a fresh New Chat after delete');
+          onNewChat && onNewChat();
+        }
+      }
       
       // Call delete API in background - don't block frontend deletion and don't care about result
       hybridChatService.deleteConversation(threadId).then(() => {
@@ -544,8 +558,8 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         console.log('⚠️ Background API delete failed for:', threadId, error.message);
       });
       
-      // DO NOT refresh conversations - this causes deleted items to reappear
-      console.log('🔒 Not refreshing conversation list to prevent reloading deleted items');
+  // DO NOT refresh entire list immediately to avoid flicker; targeted refetch happens above
+  console.log('🔒 Skipped full list refresh to prevent deleted items reappearing');
       
     } catch (error) {
       console.log('⚠️ Delete operation had issues but frontend deletion completed:', error.message);
