@@ -143,16 +143,7 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
         setParentSupportsBreakout(true);
       }
 
-      // Capture parent URL from trusted origin for back navigation (parity with PulseEmbedded)
-      try {
-        if (event.origin === 'https://qa1-pulse-next.elevancehealth.com' && event?.data?.PULSE_PAGE_URL) {
-          if (typeof window !== 'undefined') {
-            window.__PULSE_PARENT_URL = event.data.PULSE_PAGE_URL;
-          }
-        }
-      } catch (_) {
-        // ignore cross-origin issues
-      }
+      // Removed capturing parent URL via postMessage per requirement
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
@@ -169,13 +160,12 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
       return; // Successful form submission
     }
 
-    // Non-iframe fallback: normal SPA navigation
     const params = new URLSearchParams({
       query: question,
       ...(conversationId && { conversationId }),
       ...(type && { type }),
       fromIframe: 'false',
-      parentUrl: 'https://qa1-pulse-next.elevancehealth.com/v3/home'
+      parentUrl: (typeof window !== 'undefined' && window.__PULSE_PARENT_URL) || 'none'
     });
     const resultUrl = `/resultpage?${params.toString()}`;
     window.location.href = resultUrl;

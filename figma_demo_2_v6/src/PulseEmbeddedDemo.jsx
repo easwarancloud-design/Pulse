@@ -34,10 +34,20 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
     'Show me my vacation balance and requests'
   ]);
 
+  // Helper: resolve domainId from query param first, else props/local user
+  const resolveDomainId = () => {
+    try {
+      const usp = new URLSearchParams(window.location.search);
+      const qd = usp.get('domainId');
+      if (qd) return qd;
+    } catch {}
+    return domainId || effectiveUserInfo?.domainId || effectiveUserInfo?.domain_id || null;
+  };
+
   // Fetch predefined questions from API on component mount
   useEffect(() => {
     const loadPredefinedQuestions = async () => {
-      const effectiveDomainId = domainId || effectiveUserInfo?.domainId || effectiveUserInfo?.domain_id || null;
+      const effectiveDomainId = resolveDomainId();
       if (!effectiveDomainId) {
         console.warn('⚠️ No domainId available for predefined questions; skipping fetch');
         return;
@@ -186,13 +196,12 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
       return; // Successful form submission
     }
 
-    // Non-iframe fallback: normal SPA navigation
     const params = new URLSearchParams({
       query: question,
       ...(conversationId && { conversationId }),
       ...(type && { type }),
       fromIframe: 'false',
-      parentUrl: 'https://qa1-pulse-next.elevancehealth.com/v3/home'
+      parentUrl: (typeof window !== 'undefined' && window.__PULSE_PARENT_URL) || 'none'
     });
     const resultUrl = `/resultpage?${params.toString()}`;
     window.location.href = resultUrl;
@@ -201,7 +210,7 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
   const loadThreadsFromStorage = async () => {
     try {
       try {
-        const effectiveDomainId = domainId || effectiveUserInfo?.domainId || effectiveUserInfo?.domain_id || null;
+  const effectiveDomainId = resolveDomainId();
         if (!effectiveDomainId) {
           console.warn('⚠️ No domainId available to load threads; skipping remote fetch');
           throw new Error('missing_domain_id');
@@ -235,7 +244,7 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
 
       // Hybrid service fallback
       try {
-        const effectiveDomainId2 = domainId || effectiveUserInfo?.domainId || effectiveUserInfo?.domain_id || null;
+  const effectiveDomainId2 = resolveDomainId();
         if (!effectiveDomainId2) {
           console.warn('⚠️ No domainId for hybridChatService; skipping');
           return [];

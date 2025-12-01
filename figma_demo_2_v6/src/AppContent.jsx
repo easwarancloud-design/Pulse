@@ -752,6 +752,14 @@ useEffect(() => {
         }
       />
       <Route
+        path="/pulse_demo"
+        element={
+          <div className="App">
+            <PulseEmbeddedDemo domainId={resolvedDomainId} />
+          </div>
+        }
+      />
+      <Route
         path="/resultpage"
         element={
           <div className="App">

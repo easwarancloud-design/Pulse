@@ -14,6 +14,16 @@ const AISearchHero = () => {
     return null;
   }
 
+  // Read domainId from Okta-populated localStorage and pass into iframe
+  let domainIdParam = '';
+  try {
+    const info = JSON.parse(localStorage.getItem('userInfo') || '{}');
+    const did = info.domainId || info.domain_id;
+    if (did) {
+      domainIdParam = `?domainId=${encodeURIComponent(did)}`;
+    }
+  } catch {}
+
   return (
     <div
       className="relative"
@@ -31,7 +41,7 @@ const AISearchHero = () => {
     >
       <div className="w-full h-full relative" style={{ zIndex: 10 }}>
         <iframe
-          src="/pulseembedded_demo"
+          src={`/pulseembedded_demo${domainIdParam}`}
           style={{
             width: '100%',
             height: '100%',

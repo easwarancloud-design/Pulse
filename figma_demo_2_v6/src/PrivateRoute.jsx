@@ -6,17 +6,22 @@ const PrivateRoute = ({ children }) => {
   const { authState, oktaAuth } = useOktaAuth();
   const location = useLocation();
 
+  // Allowlist routes that should NOT enforce Okta auth (public iframe pages)
+  const allowAnonymous = (
+    location.pathname === '/pulseembedded_demo'
+  );
+
   useEffect(() => {
-    if (!authState?.isPending && !authState?.isAuthenticated) {
+    if (!allowAnonymous && !authState?.isPending && !authState?.isAuthenticated) {
       oktaAuth.signInWithRedirect({ originalUri: location.pathname + location.search });
     }
-  }, [authState, oktaAuth, location]);
+  }, [authState, oktaAuth, location, allowAnonymous]);
 
-  if (!authState || authState.isPending) {
+  if (!allowAnonymous && (!authState || authState.isPending)) {
     return null; // or a loading spinner
   }
 
-  if (!authState.isAuthenticated) {
+  if (!allowAnonymous && !authState.isAuthenticated) {
     return null; // user is being redirected
   }
 
