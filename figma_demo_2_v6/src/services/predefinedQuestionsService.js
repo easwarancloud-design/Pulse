@@ -16,11 +16,12 @@ export const fetchPredefinedQuestions = async (domainId) => {
     return [];
   }
   try {
+    const upperDomain = String(domainId).toUpperCase();
     const response = await fetch(API_ENDPOINTS.PREDEFINED_QUESTIONS, {
       method: 'POST',
       headers: API_HEADERS.TOKEN_AUTH,
       body: JSON.stringify({
-        domainid: domainId
+        domainid: upperDomain
       })
     });
 

@@ -5,6 +5,12 @@
  */
 
 import { API_ENDPOINTS } from '../config/api';
+import {
+  isCompatibilityProbesEnabled,
+  shouldProbeSearchEndpoint,
+  shouldProbeUserConversations,
+  FEATURE_FLAGS,
+} from '../config/featureFlags';
 
 class APICompatibilityService {
   constructor() {
@@ -28,7 +34,9 @@ class APICompatibilityService {
     }
 
     try {
-      console.log('🔧 Checking API compatibility...');
+      if (FEATURE_FLAGS.LOG_COMPATIBILITY_CHECKS) {
+        console.log('🔧 Checking API compatibility...');
+      }
       
       // Test basic health endpoint
       const healthResponse = await fetch(API_ENDPOINTS.CONVERSATION_HEALTH, {
@@ -37,10 +45,16 @@ class APICompatibilityService {
       });
 
       if (healthResponse.ok) {
-        console.log('✅ API health check passed');
+        if (FEATURE_FLAGS.LOG_COMPATIBILITY_CHECKS) {
+          console.log('✅ API health check passed');
+        }
         
-        // Test if it's the full conversation API or basic API
-        await this.testFeatureSupport();
+        // Optionally test feature support (gated by flags)
+        if (isCompatibilityProbesEnabled()) {
+          await this.testFeatureSupport();
+        } else if (FEATURE_FLAGS.LOG_COMPATIBILITY_CHECKS) {
+          console.log('ℹ️ Skipping compatibility feature probes (flag disabled)');
+        }
         
       } else {
         console.warn('⚠️ API health check failed, using compatibility mode');
@@ -67,7 +81,7 @@ class APICompatibilityService {
         const info = JSON.parse(localStorage.getItem('userInfo') || '{}');
         testUserId = info.domainId || info.domain_id || null;
       } catch {}
-      if (testUserId) {
+      if (testUserId && shouldProbeUserConversations()) {
         const userConvResponse = await fetch(
           `${API_ENDPOINTS.USER_CONVERSATIONS(testUserId)}?limit=1`,
           { method: 'GET', headers: { 'Content-Type': 'application/json' } }
@@ -75,14 +89,22 @@ class APICompatibilityService {
 
         if (userConvResponse.ok) {
           this.supportedFeatures.searchConversations = true;
-          console.log('✅ User conversations endpoint supported');
+          if (FEATURE_FLAGS.LOG_COMPATIBILITY_CHECKS) {
+            console.log('✅ User conversations endpoint supported');
+          }
+        }
+      } else if (FEATURE_FLAGS.LOG_COMPATIBILITY_CHECKS) {
+        if (!testUserId) {
+          console.log('ℹ️ Skipping user conversations test: no domainId available yet');
+        } else {
+          console.log('ℹ️ Skipping user conversations probe (flag disabled)');
         }
       } else {
-        console.log('ℹ️ Skipping user conversations test: no domainId available yet');
+        // no-op
       }
 
       // Test conversation search endpoint
-      if (testUserId) {
+      if (testUserId && shouldProbeSearchEndpoint()) {
         const searchResponse = await fetch(
           `${API_ENDPOINTS.CONVERSATION_SEARCH}?user_id=${testUserId}&query=test&limit=1`,
           { method: 'GET', headers: { 'Content-Type': 'application/json' } }
@@ -90,7 +112,15 @@ class APICompatibilityService {
 
         if (searchResponse.ok) {
           this.supportedFeatures.searchConversations = true;
-          console.log('✅ Conversation search endpoint supported');
+          if (FEATURE_FLAGS.LOG_COMPATIBILITY_CHECKS) {
+            console.log('✅ Conversation search endpoint supported');
+          }
+        }
+      } else if (FEATURE_FLAGS.LOG_COMPATIBILITY_CHECKS) {
+        if (!testUserId) {
+          console.log('ℹ️ Skipping conversation search test: no domainId available yet');
+        } else {
+          console.log('ℹ️ Skipping conversation search probe (flag disabled)');
         }
       }
 

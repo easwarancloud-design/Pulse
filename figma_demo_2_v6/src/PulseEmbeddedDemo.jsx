@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ChatIcon from './components/ChatIcon';
 import { fetchPredefinedQuestions } from './services/predefinedQuestionsService';
 import hybridChatService from './services/hybridChatService';
+import { API_ENDPOINTS } from './config/api';
 
 // Renamed legacy component: PulseEmbeddedDemo (formerly PulseEmbeddedOld)
 const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
@@ -39,9 +40,10 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
     try {
       const usp = new URLSearchParams(window.location.search);
       const qd = usp.get('domainId');
-      if (qd) return qd;
+      if (qd) return qd.toUpperCase();
     } catch {}
-    return domainId || effectiveUserInfo?.domainId || effectiveUserInfo?.domain_id || null;
+    const id = domainId || effectiveUserInfo?.domainId || effectiveUserInfo?.domain_id || null;
+    return id ? String(id).toUpperCase() : null;
   };
 
   // Helper: resolve user name from query param first, else props/local user
@@ -225,15 +227,13 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
   const loadThreadsFromStorage = async () => {
     try {
       try {
-  const effectiveDomainId = resolveDomainId();
+        const effectiveDomainId = resolveDomainId();
         if (!effectiveDomainId) {
           console.warn('⚠️ No domainId available to load threads; skipping remote fetch');
           throw new Error('missing_domain_id');
         }
-        const response = await fetch(
-          `https://workforceagent.elevancehealth.com/api/conversations/user/${effectiveDomainId}?limit=10`,
-          { method: 'GET', headers: { 'Content-Type': 'application/json' } }
-        );
+        const apiUrl = API_ENDPOINTS.USER_CONVERSATIONS(effectiveDomainId) + `?limit=10`;
+        const response = await fetch(apiUrl, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
         if (response.ok) {
           const data = await response.json();
           let conversations = data;
@@ -259,7 +259,7 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
 
       // Hybrid service fallback
       try {
-  const effectiveDomainId2 = resolveDomainId();
+        const effectiveDomainId2 = resolveDomainId();
         if (!effectiveDomainId2) {
           console.warn('⚠️ No domainId for hybridChatService; skipping');
           return [];

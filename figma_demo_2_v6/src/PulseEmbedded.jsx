@@ -25,13 +25,8 @@ const getParentUrl = () => {
   }
 };
 
-// Universal form submission handler for iframe breakout
+// Universal form submission handler (always use form submit on this page)
 const handleFormSubmission = (query, type = 'manual', additionalData = {}) => {
-  // Only use form submission if in iframe context
-  if (!isInIframe()) {
-    console.log('❌ Not in iframe - skipping form submission');
-    return false; // Let normal flow handle it
-  }
 
   console.group('🚀 DYNAMIC FORM SUBMISSION STARTED (PulseEmbedded)');
   console.log('📝 Input parameters:', { query, type, additionalData });
@@ -39,7 +34,9 @@ const handleFormSubmission = (query, type = 'manual', additionalData = {}) => {
   // Create form element
   const form = document.createElement('form');
   form.method = 'GET';
-  form.action = 'https://workforceagent.slvr-dig-empmgt.awsdns.internal.das/resultpage'; // Replace with your actual results page URL
+  // Always route to the current app's origin (where this embedded app is running)
+  // Example: http://localhost:3002/resultpage in local dev
+  form.action = `${window.location.origin}/resultpage`;
   form.target ='_top'; // Break out of iframe
   form.style.display = 'none';
 
@@ -98,7 +95,7 @@ const handleFormSubmission = (query, type = 'manual', additionalData = {}) => {
     console.groupEnd();
   }, 2000);
 
-  return true; // Indicates form submission was used
+  return true; // Always use form submission on this page
 };
 
 // Accept domainId directly (single source of truth from AppContent)
