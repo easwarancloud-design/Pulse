@@ -268,6 +268,11 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
     const threadsRaw = Array.isArray(allThreads) ? allThreads : [];
     const threads = threadsRaw.filter(t => t?.title && t.title.trim() !== 'New Chat');
 
+    // If no data from API/hybrid, show placeholder entry
+    if (threads.length === 0) {
+      return [{ id: 'no-prev', title: 'No previous conversations', isPlaceholder: true }];
+    }
+
     if (!query.trim()) {
       const maxSuggestions = isInIframe() ? 3 : 6;
       return threads.slice(0, maxSuggestions);
@@ -309,6 +314,13 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
   };
 
   const handleSuggestionClick = (suggestion) => {
+    // Ignore placeholder item
+    if (suggestion?.isPlaceholder || suggestion?.id === 'no-prev') {
+      setShowSuggestions(false);
+      if (isInIframe()) hideDropdownInParent();
+      return;
+    }
+
     if (isInIframe()) {
       hideDropdownInParent();
     } else {

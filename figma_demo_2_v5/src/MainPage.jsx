@@ -74,18 +74,7 @@ const PrimaryNavbar = ({ userInfo }) => (
 				<div className="hidden sm:flex items-center space-x-4">
 					<a href="#" className="text-sm font-medium text-gray-700 hover:text-indigo-600">My HR</a>
 					<div className="border-l border-gray-300 h-6"></div>
-					<a 
-						href="/pulsemain" 
-						className="text-sm font-medium text-blue-600 hover:text-blue-800 font-semibold"
-						onClick={(e) => {
-							e.preventDefault();
-							window.history.pushState({}, '', '/pulsemain');
-							window.location.reload();
-						}}
-					>
-						PulseMain
-					</a>
-					<div className="border-l border-gray-300 h-6"></div>
+					{/* Removed PulseMain link per requirement to drop /pulsemain route */}
 					<a href="#" className="text-sm font-medium text-gray-700 hover:text-indigo-600 flex items-center">
 						<Globe className="w-4 h-4 mr-1" />
 						Español

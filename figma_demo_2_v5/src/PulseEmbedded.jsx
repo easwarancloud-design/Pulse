@@ -314,6 +314,11 @@ const PulseEmbedded = ({ userInfo, domainId }) => {
       thread.title && thread.title.trim() !== 'New Chat'
     );
 
+    // If no data from API/hybrid, show placeholder entry
+    if (!Array.isArray(allThreads) || validThreads.length === 0) {
+      return [{ id: 'no-prev', title: 'No previous conversations', isPlaceholder: true }];
+    }
+
     if (!query.trim()) {
       // Always show only 3 suggestions (user request)
       return validThreads.slice(0, 3);
@@ -369,6 +374,13 @@ const PulseEmbedded = ({ userInfo, domainId }) => {
 
   // Handle suggestion click
   const handleSuggestionClick = (suggestion) => {
+    // Ignore placeholder item
+    if (suggestion?.isPlaceholder || suggestion?.id === 'no-prev') {
+      setShowSuggestions(false);
+      if (isInIframe()) hideDropdownInParent();
+      return;
+    }
+
     // Hide dropdown first
     if (isInIframe()) {
       hideDropdownInParent();

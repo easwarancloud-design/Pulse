@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import MainPage from './MainPage.jsx';
-import PulseMain from './PulseMain';
 import ChatPage from './ChatPage'; // Light mode
 import PulseEmbedded from './PulseEmbedded';
 import PulseEmbeddedDemo from './PulseEmbeddedDemo';
-import ChatIntegrationDemo from './components/ChatIntegrationDemo';
 import { useTheme } from './context/ThemeContext';
 import { hybridChatService } from './services/hybridChatService';
 import { conversationCacheService } from './services/conversationCacheService';
@@ -664,23 +662,7 @@ function AppContent() {
         path="/" 
         element={
           <div className="App">
-            <MainPage onSearch={navigateToResults} onNewChat={handleNewChat} />
-          </div>
-        } 
-      />
-      <Route 
-        path="/demo-chat" 
-        element={
-          <div className="App">
-            <ChatIntegrationDemo />
-          </div>
-        } 
-      />
-      <Route 
-        path="/pulsemain" 
-        element={
-          <div className="App">
-            <PulseMain onSearch={navigateToResults} onNewChat={handleNewChat} />
+            <MainPage />
           </div>
         } 
       />
