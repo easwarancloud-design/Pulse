@@ -1,8 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useOktaAuth } from '@okta/okta-react';
 
-const AISearchHero = ({ onSearch }) => {
+const AISearchHero = () => {
+  const { authState } = useOktaAuth();
+
+  // Prevent iframe from loading before authentication to avoid duplicate Okta redirect race
+  if (!authState || authState.isPending) {
+    return null; // or a skeleton placeholder
+  }
+
+  // If not authenticated (edge case before redirect kicks in), also suppress iframe mount
+  if (!authState.isAuthenticated) {
+    return null;
+  }
+
   return (
-    <div 
+    <div
       className="relative"
       style={{
         background: 'linear-gradient(115deg, #122F65 2.06%, #00123C 97.35%)',
@@ -16,7 +29,6 @@ const AISearchHero = ({ onSearch }) => {
         width: '100%'
       }}
     >
-      {/* Iframe containing PulseEmbeddedDemo - full width no padding */}
       <div className="w-full h-full relative" style={{ zIndex: 10 }}>
         <iframe
           src="/pulseembedded_demo"

@@ -1,23 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import MainPage from './MainPage.jsx';
-import PulseMain from './PulseMain';
 import ChatPage from './ChatPage'; // Light mode
 import PulseEmbedded from './PulseEmbedded';
 import PulseEmbeddedDemo from './PulseEmbeddedDemo';
-import ChatIntegrationDemo from './components/ChatIntegrationDemo';
 import { useTheme } from './context/ThemeContext';
 import { hybridChatService } from './services/hybridChatService';
 import { conversationCacheService } from './services/conversationCacheService';
 import { localConversationManager } from './services/localConversationManager';
 import './App.css';
 
-import { oktaAuth } from './oktaConfig';
-import PrivateRoute from './PrivateRoute';
-import { Security, useOktaAuth } from '@okta/okta-react';
-
 function AppContent() {
-  const { oktaAuth, authState } = useOktaAuth();
   const [userQuestion, setUserQuestion] = useState('');
   const [currentThread, setCurrentThread] = useState(null);
   const [isNewChat, setIsNewChat] = useState(false);
@@ -26,48 +19,15 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [userInfo, setUserInfo] = useState(() => {
-  // Initialize from localStorage if available
-  try {
-    return JSON.parse(localStorage.getItem('userInfo')) || null;
-  } catch {
-    return null;
-  }
-});
-
-// Extract user information when authenticated
-useEffect(() => {
-  if (authState?.isAuthenticated) {
-    oktaAuth.getUser()
-      .then((user) => {
-        // 👇 Log the entire user object to see all keys
-        console.log('Okta user object:', user);
-        const info = {
-          name: user.name || user.given_name || 'User',
-          firstName: user.given_name,
-          lastName: user.family_name,
-          email: user.email,
-          domainId: user.domainID
-,
-          fullName: `${user.given_name} ${user.family_name}`.trim(),
-        };
-        setUserInfo(info);
-        localStorage.setItem('userInfo', JSON.stringify(info)); // persist to localStorage
-      })
-      .catch(console.error);
-  }
-}, [authState, oktaAuth]);
-
-// Centralized domainId resolution
-const resolvedDomainId = React.useMemo(() => {
-  if (userInfo?.domainId) return userInfo.domainId;
-  try {
-    const stored = JSON.parse(localStorage.getItem('userInfo') || '{}');
-    return stored.domainId || stored.domain_id || null; // no default fallback
-  } catch {
-    return null;
-  }
-}, [userInfo]);
+  // Centralized domainId resolution (single source of truth passed to embedded pages)
+  const resolvedDomainId = React.useMemo(() => {
+    try {
+      const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+      return userInfo.domainId || userInfo.domain_id || 'AG04333';
+    } catch {
+      return 'AG04333';
+    }
+  }, []);
 
   // Ref for immediate sidebar conversation addition
   const addConversationImmediateRef = useRef(null);
@@ -76,7 +36,7 @@ const resolvedDomainId = React.useMemo(() => {
   React.useEffect(() => {
     // 🧹 Clean up old local storage on app start
     localConversationManager.cleanupOldConversations();
-
+    
     if (location.pathname === '/resultpage') {
       const params = new URLSearchParams(location.search);
       const query = params.get('query');
@@ -92,7 +52,7 @@ const resolvedDomainId = React.useMemo(() => {
           setUserQuestion(query);
           setIsNewChat(true);
           setIsNewChatActive(true);
-
+          
           const newThread = {
             id: 'thread_' + Date.now(),
             title: 'New Chat',
@@ -131,32 +91,32 @@ const resolvedDomainId = React.useMemo(() => {
         isNewChat,
         isNewChatActive
       });
-
+      
       // Only auto-load if we're on resultpage, have no current thread, and no URL params
-      if (location.pathname === '/resultpage' &&
-          !currentThread &&
-          !location.search &&
-          !isNewChat &&
+      if (location.pathname === '/resultpage' && 
+          !currentThread && 
+          !location.search && 
+          !isNewChat && 
           !isNewChatActive) {
-
+        
         console.log('✅ Conditions met, attempting to auto-load first conversation');
-
+        
         try {
           // Get user info to set user ID
           const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
           const userId = userInfo.domainId || userInfo.domain_id || 'AG04333'; // Default fallback
-
+          
           console.log('👤 Using user ID for auto-load:', userId);
           hybridChatService.setUserId(userId);
-
+          
           // Get conversation history to find the first conversation
           const conversations = await hybridChatService.getConversationHistory(10, 0, true);
           console.log('📚 Found conversations:', conversations?.length || 0);
-
+          
           if (conversations && conversations.length > 0) {
             const firstConversation = conversations[0];
             console.log('🔄 Auto-loading first conversation on page refresh:', firstConversation.title);
-
+            
             // Load the first conversation using the existing handleThreadSelect logic
             await handleThreadSelect(firstConversation);
           } else {
@@ -173,7 +133,7 @@ const resolvedDomainId = React.useMemo(() => {
 
     // Delay slightly to allow other initialization to complete
     const timeoutId = setTimeout(autoLoadFirstConversation, 500);
-
+    
     return () => clearTimeout(timeoutId);
   }, [location.pathname, currentThread, isNewChat, isNewChatActive]);
 
@@ -193,7 +153,7 @@ const resolvedDomainId = React.useMemo(() => {
       setUserQuestion(question); // This will be used to pre-fill the input
       setIsNewChat(true);
       setIsNewChatActive(true);
-
+      
       const newThread = {
         id: 'thread_' + Date.now(),
         title: 'New Chat', // Start with "New Chat" title
@@ -211,7 +171,7 @@ const resolvedDomainId = React.useMemo(() => {
       setUserQuestion(question);
       setIsNewChat(false);
       setIsNewChatActive(false);
-
+      
       const newThread = {
         id: 'thread_' + Date.now(),
         title: question.length > 50 ? question.substring(0, 50) + '...' : question,
@@ -219,7 +179,7 @@ const resolvedDomainId = React.useMemo(() => {
       };
       setCurrentThread(newThread);
     }
-
+    
     // Navigate to result page with parameters
     navigate(`/resultpage?${params.toString()}`);
   };
@@ -306,7 +266,7 @@ const resolvedDomainId = React.useMemo(() => {
     const fromIframe = urlParams.get('fromIframe') === 'true';
     const parentUrl = urlParams.get('parentUrl');
     const hasUrlParams = urlParams.has('query') || urlParams.has('type');
-
+    
     // Detect if we're currently in an iframe context
     const isInIframe = () => {
       try {
@@ -362,7 +322,7 @@ const resolvedDomainId = React.useMemo(() => {
       title: 'New Chat',
       conversation: []
     };
-
+    
     setIsNewChat(true);
     setIsNewChatActive(true);
     setCurrentThread(newThread);
@@ -375,17 +335,17 @@ const resolvedDomainId = React.useMemo(() => {
     } else {
       console.warn('⚠️ addConversationImmediateRef.current is null - cannot add to sidebar');
     }
-
+    
     // Navigate to result page for new chat
     navigate('/resultpage');
-
+    
     // Note: Thread will be saved to API when first message is sent
   };
 
   const handleThreadSelect = async (thread) => {
     try {
       console.log('🔍 Loading conversation:', thread.id);
-
+      
       // Immediately reflect selection in UI to avoid showing previous conversation while loading
       setCurrentThread({ id: thread.id, title: thread.title, conversation: [] });
       setIsNewChat(false);
@@ -398,11 +358,11 @@ const resolvedDomainId = React.useMemo(() => {
         console.log('🗑️ Pre-clearing cache for conversation:', thread.id);
         conversationCacheService.remove(thread.id);
       }
-
+      
       // Get user info to set user ID
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const userId = userInfo.domainId || userInfo.domain_id;
-
+      
       if (userId) {
         hybridChatService.setUserId(userId);
       }
@@ -420,15 +380,15 @@ const resolvedDomainId = React.useMemo(() => {
 
       // Try to load the full conversation from API
       console.log('🔄 Attempting to load conversation...');
-
+      
       // 💾 FIRST: Check local storage for instant response
       const localData = localConversationManager.getLocalConversation(thread.id);
-
+      
       // 🔍 VALIDATION: Check if localStorage has old format (numeric IDs instead of UUIDs)
-      const hasOldFormat = localData && localData.messages && localData.messages.some(msg =>
+      const hasOldFormat = localData && localData.messages && localData.messages.some(msg => 
         typeof msg.id === 'number' || (typeof msg.id === 'string' && !msg.id.startsWith('msg_') && !msg.id.startsWith('local_'))
       );
-
+      
       if (hasOldFormat) {
         console.warn('⚠️ Detected old localStorage format with numeric IDs - clearing and reloading from API');
         localConversationManager.deleteConversation(thread.id);
@@ -443,7 +403,7 @@ const resolvedDomainId = React.useMemo(() => {
         setIsNewChatActive(false);
         setUserQuestion('');
         navigate('/resultpage');
-
+        
         // Still load from API in background to sync any new messages
         setTimeout(async () => {
           try {
@@ -452,10 +412,10 @@ const resolvedDomainId = React.useMemo(() => {
               includeMessages: true,
               forceRefresh: true
             });
-
+            
             if (apiData && apiData.messages && apiData.messages.length > localData.messages.length) {
               console.log('🔄 API has more messages - updating local storage and UI');
-
+              
               // Convert API messages to normalized format (PRESERVE UUIDs!)
               const normalizedApiMessages = apiData.messages.map((msg, index) => ({
                 id: msg.id || `local_${index + 1}`,  // ✅ Preserve backend UUID
@@ -467,21 +427,21 @@ const resolvedDomainId = React.useMemo(() => {
                 isWelcome: false,
                 originalMsg: msg
               }));
-
+              
               // Update local storage with complete conversation
               localConversationManager.saveCompleteConversation(
                 thread.id,
                 apiData.title || thread.title,
                 normalizedApiMessages
               );
-
+              
               // Update current thread to show new messages
               setCurrentThread(prevThread => ({
                 ...prevThread,
                 conversation: normalizedApiMessages,
                 title: apiData.title || prevThread.title
               }));
-
+              
               console.log('✅ Local storage and UI updated with new messages from API');
             }
           } catch (error) {
@@ -490,20 +450,20 @@ const resolvedDomainId = React.useMemo(() => {
         }, 100);
         return;
       }
-
+      
       // 🌐 FALLBACK: Load from API if no local data
       console.log('🌐 No local data found - loading from API...');
       const fullConversation = await hybridChatService.getConversation(thread.id, {
         includeMessages: true,
         forceRefresh: true // 🔥 FORCE FRESH DATA to see new messages
       });
-
+      
       // Check if we got an error object instead of conversation data
       if (fullConversation && fullConversation.error) {
         console.log(`⚠️ API returned error: ${fullConversation.error} - ${fullConversation.message}`);
-
+        
         let fallbackMessage = 'Welcome! You can start a new conversation by typing your message below.';
-
+        
         if (fullConversation.error === 'validation_error') {
           fallbackMessage = 'This conversation exists but cannot be loaded due to a data format issue. You can continue chatting by typing your message below.';
         } else if (fullConversation.error === 'not_found') {
@@ -513,7 +473,7 @@ const resolvedDomainId = React.useMemo(() => {
         } else {
           fallbackMessage = 'Unable to load this conversation. You can continue chatting by typing your message below.';
         }
-
+        
         setCurrentThread({
           ...thread,
           conversation: [
@@ -540,10 +500,10 @@ const resolvedDomainId = React.useMemo(() => {
             content: m.content?.substring(0, 30) + '...'
           }))
         });
-
+        
         // Normalize the conversation structure for ChatPage
         const normalizedMessages = [];
-
+        
         // If we have a pre-created conversation array (fallback case), use it
         if (fullConversation.conversation && Array.isArray(fullConversation.conversation)) {
           console.log('📋 Using conversation array from API');
@@ -559,7 +519,7 @@ const resolvedDomainId = React.useMemo(() => {
             message_type: msg.message_type,
             content: msg.content?.substring(0, 50)
           })));
-
+          
           fullConversation.messages.forEach((msg, index) => {
             const normalizedMsg = {
               id: msg.id || `local_${index + 1}`,  // ✅ Preserve backend UUID
@@ -582,7 +542,7 @@ const resolvedDomainId = React.useMemo(() => {
           });
           console.log('✅ Final normalized messages count:', normalizedMessages.length);
         }
-
+        
         // If no messages, add a welcome message
         if (normalizedMessages.length === 0) {
           normalizedMessages.push({
@@ -592,7 +552,7 @@ const resolvedDomainId = React.useMemo(() => {
             isWelcome: true
           });
         }
-
+        
         // Set the normalized conversation structure that ChatPage expects
         setCurrentThread({
           ...thread,
@@ -601,7 +561,7 @@ const resolvedDomainId = React.useMemo(() => {
           conversation: normalizedMessages, // Array of message objects for ChatPage
           apiData: fullConversation // Keep original API data for debugging
         });
-
+        
         // � SAVE TO LOCAL STORAGE: Store complete conversation for future instant loading
         const conversationId = fullConversation.id || thread.id;
         const conversationTitle = fullConversation.title || thread.title;
@@ -610,20 +570,20 @@ const resolvedDomainId = React.useMemo(() => {
           title: conversationTitle,
           messageCount: normalizedMessages.length
         });
-
+        
         localConversationManager.saveCompleteConversation(
           conversationId,
           conversationTitle,
           normalizedMessages
         );
-
+        
         // 🔥 CRITICAL: Set active conversation ID so new messages don't create duplicate chats
         console.log('🎯 Setting active conversation ID:', conversationId);
         hybridChatService.setActiveConversation(conversationId);
       } else {
         // No conversation data from API (null returned)
         console.log('⚠️ No conversation data from API - using cached thread data with welcome message');
-
+        
         setCurrentThread({
           ...thread,
           conversation: [
@@ -644,12 +604,12 @@ const resolvedDomainId = React.useMemo(() => {
         message: error.message,
         conversationId: thread.id
       });
-
+      
       // Provide specific error messages based on error type
       let fallbackMessage = 'Hello! I\'m here to help you with any questions you might have.';
-
+      
       if (error.message.includes('404') || error.message.includes('not found')) {
-        fallbackMessage = `The conversation "${thread.title || thread.id}" could not be found. This may happen if the conversation was deleted ormoved. You can start a new conversation by typing your message below.`;
+        fallbackMessage = `The conversation "${thread.title || thread.id}" could not be found. This may happen if the conversation was deleted or moved. You can start a new conversation by typing your message below.`;
       } else if (error.message.includes('400')) {
         fallbackMessage = 'There was an issue loading this conversation due to invalid data. You can start a new conversation by typing your message below.';
       } else if (error.message.includes('500')) {
@@ -657,7 +617,7 @@ const resolvedDomainId = React.useMemo(() => {
       } else {
         fallbackMessage = `Unable to load the conversation "${thread.title || thread.id}". You can start a new conversation by typing your message below.`;
       }
-
+      
       // Always provide a fallback to prevent the UI from breaking
       console.log('🔄 Using enhanced fallback conversation structure with specific error message');
       setCurrentThread({
@@ -669,8 +629,8 @@ const resolvedDomainId = React.useMemo(() => {
             text: fallbackMessage,
             isWelcome: true,
             isError: true,
-            errorType: error.message.includes('404') ? '404' :
-                      error.message.includes('400') ? '400' :
+            errorType: error.message.includes('404') ? '404' : 
+                      error.message.includes('400') ? '400' : 
                       error.message.includes('500') ? '500' : 'unknown'
           }
         ],
@@ -679,7 +639,7 @@ const resolvedDomainId = React.useMemo(() => {
         errorMessage: error.message
       });
     }
-
+    
     setIsNewChat(false);
     setIsNewChatActive(false);
     setUserQuestion('');
@@ -698,61 +658,45 @@ const resolvedDomainId = React.useMemo(() => {
 
   return (
     <Routes>
-      <Route
-        path="/"
+      <Route 
+        path="/" 
         element={
           <div className="App">
-            <MainPage onSearch={navigateToResults} onNewChat={handleNewChat} />
+            <MainPage />
           </div>
-        }
+        } 
       />
-      <Route
-        path="/demo-chat"
-        element={
-          <div className="App">
-            <ChatIntegrationDemo />
-          </div>
-        }
-      />
-      <Route
-        path="/pulsemain"
-        element={
-          <div className="App">
-            <PulseMain onSearch={navigateToResults} onNewChat={handleNewChat} />
-          </div>
-        }
-      />
-      <Route
-        path="/pulseembedded"
+      <Route 
+        path="/pulseembedded" 
         element={
           <div className="App">
             <PulseEmbedded domainId={resolvedDomainId} />
           </div>
-        }
+        } 
       />
       {/** Alias route to handle common typo `/pulseembeded` (single 'd') */}
-      <Route
-        path="/pulseembeded"
+      <Route 
+        path="/pulseembeded" 
         element={
           <div className="App">
             <PulseEmbedded domainId={resolvedDomainId} />
           </div>
-        }
+        } 
       />
-      <Route
-        path="/pulseembedded_demo"
+      <Route 
+        path="/pulseembedded_demo" 
         element={
           <div className="App">
             <PulseEmbeddedDemo domainId={resolvedDomainId} />
           </div>
-        }
+        } 
       />
-      <Route
-        path="/resultpage"
+      <Route 
+        path="/resultpage" 
         element={
           <div className="App">
-            <ChatPage
-              onBack={navigateToMain}
+            <ChatPage 
+              onBack={navigateToMain} 
               userQuestion={userQuestion}
               onToggleTheme={toggleTheme}
               isDarkMode={isDarkMode}
@@ -766,7 +710,7 @@ const resolvedDomainId = React.useMemo(() => {
               addConversationImmediateRef={addConversationImmediateRef}
             />
           </div>
-        }
+        } 
       />
     </Routes>
   );
