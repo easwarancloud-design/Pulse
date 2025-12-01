@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ChatIcon from './components/ChatIcon';
 import { fetchPredefinedQuestions } from './services/predefinedQuestionsService';
 import hybridChatService from './services/hybridChatService';
+import { API_ENDPOINTS } from './config/api';
 
 // Legacy frozen copy of PulseEmbedded (kept unchanged for /pulseembedded_old)
 // Legacy component now also accepts domainId for consistency
@@ -198,7 +199,7 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
         // Test 1: Try the user conversations endpoint directly
         if (!DEFAULT_DOMAIN_ID) return [];
         const response = await fetch(
-          `https://workforceagent.elevancehealth.com/api/conversations/user/${DEFAULT_DOMAIN_ID}?limit=10`,
+          `${API_ENDPOINTS.USER_CONVERSATIONS(DEFAULT_DOMAIN_ID)}?limit=10`,
           {
             method: 'GET',
             headers: {

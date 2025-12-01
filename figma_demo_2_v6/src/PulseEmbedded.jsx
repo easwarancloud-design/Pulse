@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ChatIcon from './components/ChatIcon';
 import { fetchPredefinedQuestions } from './services/predefinedQuestionsService';
 import hybridChatService from './services/hybridChatService';
+import { API_ENDPOINTS } from './config/api';
 
 // Utility function to detect if running inside iframe
 const isInIframe = () => {
@@ -259,7 +260,7 @@ const PulseEmbedded = ({ userInfo, domainId }) => {
     }
     try {
       // Attempt direct API call first
-      const directResp = await fetch(`https://workforceagent.elevancehealth.com/api/conversations/user/${DEFAULT_DOMAIN_ID}?limit=10`, {
+      const directResp = await fetch(`${API_ENDPOINTS.USER_CONVERSATIONS(DEFAULT_DOMAIN_ID)}?limit=10`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
