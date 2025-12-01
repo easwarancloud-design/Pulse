@@ -1030,6 +1030,12 @@ async def stream_response(user_input: dict):
     full_response = ""
     case_creation = ""
     policy_links = ""
+    # New: track case creation tokens
+    # Legacy compact tokens: <00>/<10>/<01>/<11>
+    case_command = None  # legacy compact form if present
+    # New verbose tokens wrapped in <<...>>: <<warning>0/1</warning><termination>0/1</termination>>
+    case_warning_flag = False
+    case_termination_flag = False
 
     Initial_url = "https://elevancehealth.service-now.com/esc?id=sc_cat_item&sys_id=28c4c91b1bed049416f5db1dcd4bcbe4"
     warning_url = "https://elevancehealth.service-now.com/esc?id=sc_cat_item&sys_id=c3ebae321bda801466e8ea0dad4bcb8c"
@@ -1066,6 +1072,29 @@ async def stream_response(user_input: dict):
 
                     pattern = r"\nid:.*?\n\n"
                     text = re.sub(pattern, "", chunk, flags=re.DOTALL).replace("data: ", "").replace("Content-Length: 0", "")
+                    # Detect and remove legacy compact tokens and any trailing blank line
+                    try:
+                        token_matches = re.findall(r"<(00|10|01|11)>", text)
+                        if token_matches:
+                            case_command = token_matches[-1]
+                            text = re.sub(r"<(?:00|10|01|11)>\s*(?:\r?\n)?", "", text)
+                    except Exception:
+                        pass
+                    # Detect and remove new verbose tokens within the stream and set flags
+                    try:
+                        # Warning flag
+                        for m in re.findall(r"<<\s*warning>([01])</warning>", text):
+                            case_warning_flag = (m == '1') or case_warning_flag
+                        # Termination flag (may include trailing >>)
+                        for m in re.findall(r"<termination>([01])</termination>>?", text):
+                            case_termination_flag = (m == '1') or case_termination_flag
+                        # Remove the verbose tokens and any surrounding wrapper markers
+                        text = re.sub(r"<<\s*warning>(?:0|1)</warning>\s*", "", text)
+                        text = re.sub(r"\s*<termination>(?:0|1)</termination>>?\s*", "", text)
+                        # Clean up accidental excessive newlines
+                        text = re.sub(r"\n{3,}", "\n\n", text)
+                    except Exception:
+                        pass
 
                     if not first_chunk_time:
                         first_chunk_time = time.time()
@@ -1074,11 +1103,13 @@ async def stream_response(user_input: dict):
                         if "<<" in text or ">>" in text:
                             match = re.search(r'<<(.*?)>>(.*)', text, re.DOTALL)
                             if match:
-                                buffer = f"<<{match.group(1).strip()}>>"
-                                buffer = buffer.replace("<<warning>1</warning>", f"<a href='{Initial_url}'>Initial Warning</a>\n<a href='{warning_url}'>Written Warning</a>")
-                                buffer = buffer.replace("<termination>1</termination>>", f"\n<a href='{termination_url}'>Request a Termination</a>")
-                                buffer = buffer.replace("<<warning>0</warning>", "").replace("<termination>0</termination>>", "")
-                                case_creation = buffer
+                                token_block = match.group(1).strip()
+                                # Parse token block for verbose flags
+                                if re.search(r"warning>1</warning>", token_block):
+                                    case_warning_flag = True
+                                if re.search(r"termination>1</termination>", token_block):
+                                    case_termination_flag = True
+                                # Drop the entire token block from output, keep only actual response
                                 data = match.group(2).strip()
                                 full_response += data
                                 yield data
@@ -1122,11 +1153,8 @@ async def stream_response(user_input: dict):
                             #policy_links = "\n".join(list(dict.fromkeys(output_list)))
                             policy_links = "\n".join(list(dict.fromkeys(output_list))[:2])
                             final_block = ""
-
                             if clean_visible_text(policy_links):
                                 final_block += "\n\n**Reference Links:**\n" + policy_links
-                            if clean_visible_text(case_creation):
-                                final_block += "\n\n**Create a case using these links:**\n" + case_creation
                             if final_block:
                                 yield final_block
                         else:
@@ -1140,6 +1168,30 @@ async def stream_response(user_input: dict):
             except Exception as e:
                 logger.critical(f"Error connecting to downstream system: {str(e)}")
                 yield "Error in fetch response, Please try again."
+
+    # After streaming completes, append Casecreation Links using verbose flags if present; else fallback to legacy mapping
+    try:
+        links = []
+        if case_warning_flag:
+            links.append(f"<a href='{Initial_url}'>Initial Warning</a>")
+            links.append(f"<a href='{warning_url}'>Written Warning</a>")
+        if case_termination_flag:
+            links.append(f"<a href='{termination_url}'>Request a Termination</a>")
+
+        # Fallback to legacy compact token mapping if no verbose flags were found
+        if not links and case_command and case_command != '00':
+            if case_command in ('10', '11'):
+                links.append(f"<a href='{Initial_url}'>Initial Warning</a>")
+                links.append(f"<a href='{warning_url}'>Written Warning</a>")
+            if case_command in ('01', '11'):
+                links.append(f"<a href='{termination_url}'>Request a Termination</a>")
+
+        if links:
+            case_block = "\n\nCasecreation Links:\n" + "\n".join(links)
+            case_block = re.sub(r"\n{3,}", "\n\n", case_block).rstrip()
+            yield case_block
+    except Exception:
+        pass
 
     logger.info(f"Total end-to-end duration: {time.time() - start_time:.2f}s")
     logger.info(f"Question:{user_input['query']}")

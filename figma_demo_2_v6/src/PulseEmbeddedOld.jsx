@@ -48,6 +48,21 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
     loadPredefinedQuestions();
   }, [domainId, userInfo?.domainId, userInfo?.domain_id]);
 
+  // Resolve userName from query param for public usage
+  const resolveUserName = () => {
+    try {
+      const usp = new URLSearchParams(window.location.search);
+      const un = usp.get('userName');
+      if (un) return un;
+    } catch {}
+    return (
+      effectiveUserInfo?.given_name ||
+      effectiveUserInfo?.firstName ||
+      (effectiveUserInfo?.name?.split(' ')[0]) ||
+      null
+    );
+  };
+
   // Detect iframe context (same-origin safe fallback)
   const isInIframe = () => {
     try {
@@ -470,7 +485,7 @@ const PulseEmbeddedOld = ({ userInfo, domainId }) => {
               lineHeight: '150%'
             }}
           >
-            Welcome, {effectiveUserInfo?.given_name || effectiveUserInfo?.firstName || effectiveUserInfo?.name?.split(' ')[0] || 'User'}!
+            Welcome, {resolveUserName() || 'User'}!
           </div>
         </div>
 

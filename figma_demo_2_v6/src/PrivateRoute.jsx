@@ -1,15 +1,14 @@
 import { useOktaAuth } from '@okta/okta-react';
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { isPublicPath } from './config/accessControl';
 
 const PrivateRoute = ({ children }) => {
   const { authState, oktaAuth } = useOktaAuth();
   const location = useLocation();
 
-  // Allowlist routes that should NOT enforce Okta auth (public iframe pages)
-  const allowAnonymous = (
-    location.pathname === '/pulseembedded_demo'
-  );
+  // Use centralized access control list for public routes
+  const allowAnonymous = isPublicPath(location.pathname);
 
   useEffect(() => {
     if (!allowAnonymous && !authState?.isPending && !authState?.isAuthenticated) {

@@ -44,6 +44,21 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
     return domainId || effectiveUserInfo?.domainId || effectiveUserInfo?.domain_id || null;
   };
 
+  // Helper: resolve user name from query param first, else props/local user
+  const resolveUserName = () => {
+    try {
+      const usp = new URLSearchParams(window.location.search);
+      const un = usp.get('userName');
+      if (un) return un;
+    } catch {}
+    return (
+      effectiveUserInfo?.given_name ||
+      effectiveUserInfo?.firstName ||
+      (effectiveUserInfo?.name?.split(' ')[0]) ||
+      null
+    );
+  };
+
   // Fetch predefined questions from API on component mount
   useEffect(() => {
     const loadPredefinedQuestions = async () => {
@@ -494,7 +509,7 @@ const PulseEmbeddedDemo = ({ userInfo, domainId }) => {
               lineHeight: '150%'
             }}
           >
-            Welcome, {effectiveUserInfo?.given_name || effectiveUserInfo?.firstName || effectiveUserInfo?.name?.split(' ')[0] || 'User'}!
+            Welcome, {resolveUserName() || 'User'}!
           </div>
         </div>
 

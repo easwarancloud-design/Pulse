@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import MenuSidebar from './MenuSidebar';
 import { useAccessToken } from './components/UseToken';
 import ButtonRow from './components/ButtonRow';
-import { uuidv4, cleanStreamText } from './utils/workforceAgentUtils';
+import { uuidv4, cleanStreamText, parseCaseFlagsFromText, buildCaseCreationBlock } from './utils/workforceAgentUtils';
 import { API_ENDPOINTS } from './config/api';
 import { hybridChatService } from './services/hybridChatService';
 import { conversationStorage } from './services/conversationStorageService';
@@ -45,6 +45,7 @@ const formatTextWithLinks = (text) => {
   // Fix corrupted UTF-8 characters that show as boxes (□)
   formattedText = formattedText
     .replace(/â€¢/g, '•')        // Fix bullet points
+    .replace(/â—/g, '')         // Remove black-circle mojibake artifacts
     .replace(/â€"/g, '—')        // Fix em dash
     .replace(/â€™/g, "'")        // Fix right single quotation mark
     .replace(/â€œ/g, '"')        // Fix left double quotation mark
@@ -67,18 +68,46 @@ const formatTextWithLinks = (text) => {
     .replace(/<<\s*LiveAgent\s*>>/gi, '')
     .replace(/<\s*LiveAgent\s*>/gi, '');
 
+  // Remove zero-width characters globally to avoid invisible artifacts
+  formattedText = formattedText.replace(/[\u200B-\u200D\uFEFF]/g, '');
+
+  // If this message contains legacy/verbose case tokens but no case-links block yet,
+  // compute and append the block so refreshed conversations still show case links.
+  if (!/CASE_LINKS_START/.test(formattedText) && !/Casecreation Links:/i.test(formattedText)) {
+    const { warning, termination } = parseCaseFlagsFromText(formattedText);
+    if (warning || termination) {
+      // Remove tokens and append the block
+      const cleaned = cleanStreamText(formattedText);
+      formattedText = (cleaned + buildCaseCreationBlock(warning, termination)).trim();
+    }
+  }
+
+  // Preserve Casecreation Links block (with anchors) while cleaning the rest
+  const CASE_START = '<!--CASE_LINKS_START-->';
+  const CASE_END = '<!--CASE_LINKS_END-->';
+  let preservedCaseBlock = '';
+  let workingText = formattedText;
+  const startIdx = workingText.indexOf(CASE_START);
+  if (startIdx !== -1) {
+    const endIdx = workingText.indexOf(CASE_END, startIdx);
+    if (endIdx !== -1) {
+      preservedCaseBlock = workingText.slice(startIdx, endIdx + CASE_END.length);
+      workingText = workingText.slice(0, startIdx) + '[[[CASE_LINKS_PLACEHOLDER]]]' + workingText.slice(endIdx + CASE_END.length);
+    }
+  }
+
   // If text already has <strong> tags, don't process it again
-  if (formattedText.includes('<strong>')) {
-    const formattedTexQuote = formattedText.replace(/'/g, "&apos;");
+  if (workingText.includes('<strong>') && !workingText.includes('[[[CASE_LINKS_PLACEHOLDER]]]')) {
+    const formattedTexQuote = workingText.replace(/'/g, "&apos;");
     return (<div dangerouslySetInnerHTML={{ __html: formattedTexQuote }} />);
   }
   
   // Step 1: Remove Reference Links sections FIRST (before processing bold text)
-  formattedText = formattedText
+  workingText = workingText
     .replace(/\*\*Reference Links?:\*\*[\s\S]*$/gmi, '')  // Remove from "**Reference Links:**" to end
     .replace(/Reference Links?:[\s\S]*$/gmi, '')          // Remove from "Reference Links:" to end  
     .replace(/\*{4,}/g, '')                              // Remove multiple asterisks (****)
-    .replace(/<a href[^>]*>.*?<\/a>/gi, '')              // Remove all HTML anchor tags
+    .replace(/<a href[^>]*>.*?<\/a>/gi, '')              // Remove all HTML anchor tags (case links preserved separately)
     .replace(/Time Away/gi, '')
     .replace(/Paid Time Off Policy/gi, '')
     .replace(/Service Contract Act Paid Time Off Policy/gi, '')
@@ -90,7 +119,7 @@ const formatTextWithLinks = (text) => {
     .replace(/data:\s*/gi, '');                         // Remove all "data:" prefixes (case-insensitive)
     
   // Step 2: Process text formatting (quotes, line breaks)
-  formattedText = formattedText
+  workingText = workingText
     .replace(/["']+/g, '')                              // Remove all single/double quotes
     .replace(/\\n/g, '<br />')                          // Literal \n to <br>
     .replace(/\n/g, '<br />')                           // Convert actual newlines to <br>
@@ -99,22 +128,31 @@ const formatTextWithLinks = (text) => {
     .replace(/<br\s*\/?>\s*<br\s*\/?>\s*<br\s*\/?>/gi, '<br /><br />'); // Reduce triple line breaks to double
     
   // Step 3: Handle list items (preserve ** for bold)
-  formattedText = formattedText.replace(/- (\*\*[^*]+\*\*)/g, '• $1');  // Fixed UTF-8 bullet character
+  workingText = workingText.replace(/- (\*\*[^*]+\*\*)/g, '• $1');  // Fixed UTF-8 bullet character
     
   // Step 4: FINAL - Convert **text** to bold (this must be LAST)
   // Use inline style to guarantee bold rendering regardless of external CSS
-  formattedText = formattedText.replace(/\*\*([^*\n]+?)\*\*/g, '<strong style="font-weight:800; font-variation-settings: \"wght\" 800;">$1</strong>');
+  workingText = workingText.replace(/\*\*([^*\n]+?)\*\*/g, '<strong style="font-weight:800; font-variation-settings: \"wght\" 800;">$1</strong>');
     
   // Final cleanup: collapse excessive breaks and trim trailing space/breaks
-  formattedText = formattedText
+  workingText = workingText
     // Reduce 3+ <br> to 2
     .replace(/(?:<br\s*\/?>(?:\s|&nbsp;)*?){3,}/gi, '<br /><br />')
     // Remove trailing <br> and whitespace
     .replace(/(?:<br\s*\/?>(?:\s|&nbsp;)*)+$/i, '')
     // Collapse multiple spaces
-    .replace(/\s{3,}/g, ' ');
+    .replace(/\s{3,}/g, ' ')
+    // Remove trailing bullet-only lines after formatting (handles plain bullets left at end)
+    .replace(/(?:\n|<br\s*\/?\>)*(?:[•●◦▪▫]\s*)+$/gi, '')
+    // Remove trailing non-ASCII mojibake artifacts (rarely appear at the end)
+    .replace(/[^\x00-\x7F]+$/g, '');
 
-  const formattedTexQuote = formattedText.replace(/'/g, "&apos;");
+  // Restore preserved case links block if present
+  if (preservedCaseBlock) {
+    workingText = workingText.replace('[[[CASE_LINKS_PLACEHOLDER]]]', preservedCaseBlock);
+  }
+
+  const formattedTexQuote = workingText.replace(/'/g, "&apos;");
 
   return (
     <div 
@@ -679,12 +717,18 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         } else {
           // Regular short text response
           const cleanedShort = cleanStreamText(shortText) || 'Empty response received from API';
+          const { warning, termination } = parseCaseFlagsFromText(shortText);
+          const alreadyHasBlock = /Casecreation Links:/i.test(cleanedShort) || /CASE_LINKS_START/.test(cleanedShort);
+          const finalShortText = alreadyHasBlock
+            ? cleanedShort
+            : (cleanedShort + buildCaseCreationBlock(warning, termination)).trim();
+
           setMessages(prev => prev.map(msg =>
             msg.chat_id === botChatId
               ? { 
                   ...msg, 
                   type: 'assistant', 
-                  text: cleanedShort, 
+                  text: finalShortText, 
                   originalText: shortText,  // Store original short text
                   completed: true,
                   lastUpdated: Date.now()
@@ -695,14 +739,14 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           // ðŸ”„ Save short response immediately (SHORT RESPONSE SAVE)
           try {
             await hybridChatService.saveAssistantResponse(
-              cleanedShort,
+              finalShortText,
               inputText,
               { 
                 source: 'workforce_agent_short',
                 timestamp: Date.now(),
                 chat_id: botChatId,
                 response_type: 'short_response',
-                content_length: cleanedShort.length
+                content_length: finalShortText.length
               },
               botChatId // Pass bot chat ID for database storage
             );
@@ -712,7 +756,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             if (activeConversationId) {
               localConversationManager.saveMessageLocally(activeConversationId, {
                 type: 'assistant',
-                text: cleanedShort,
+                text: finalShortText,
                 chat_id: botChatId,
                 timestamp: Date.now()
               });
@@ -720,7 +764,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             } else if (currentThread?.id) {
               localConversationManager.saveMessageLocally(currentThread.id, {
                 type: 'assistant',
-                text: cleanedShort,
+                text: finalShortText,
                 chat_id: botChatId,
                 timestamp: Date.now()
               });
@@ -869,14 +913,21 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         // Disable input when live agent card is shown - user must select a button
         setIsLiveAgentCardShowing(true);
       } else {
-        // Mark bot message as completed
+        // Mark bot message as completed and append Casecreation Links (frontend-only)
+        const cleanedFinal = cleanStreamText(partialMessage);
+        const { warning, termination } = parseCaseFlagsFromText(partialMessage);
+  const hasExistingCaseBlock = /Casecreation Links:/i.test(cleanedFinal) || /CASE_LINKS_START/.test(cleanedFinal);
+        const finalWithCaseBlock = hasExistingCaseBlock
+          ? cleanedFinal
+          : (cleanedFinal + buildCaseCreationBlock(warning, termination)).trim();
+
         setMessages(prev => prev.map(msg =>
           msg.chat_id === botChatId
             ? { 
                 ...msg, 
                 completed: true, 
-                text: cleanStreamText(partialMessage),
-                originalText: partialMessage,  // Store original text with links
+                text: finalWithCaseBlock,
+                originalText: partialMessage,  // Store original text with links/tokens
                 lastUpdated: Date.now()
               }
             : msg
@@ -887,7 +938,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           try {
             
             await hybridChatService.saveAssistantResponse(
-              partialMessage.trim(),
+              finalWithCaseBlock,
               inputText,
               { 
                 source: 'workforce_agent_completion',
@@ -906,7 +957,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             if (activeConversationId) {
               localConversationManager.saveMessageLocally(activeConversationId, {
                 type: 'assistant',
-                text: cleanStreamText(partialMessage),
+                text: finalWithCaseBlock,
                 chat_id: botChatId,
                 timestamp: Date.now(),
                 completed: true
@@ -915,7 +966,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             } else if (currentThread?.id) {
               localConversationManager.saveMessageLocally(currentThread.id, {
                 type: 'assistant',
-                text: cleanStreamText(partialMessage),
+                text: finalWithCaseBlock,
                 chat_id: botChatId,
                 timestamp: Date.now(),
                 completed: true
@@ -954,7 +1005,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           // Save assistant response if we have content (BACKUP SAVE - only if primary save failed)
           if (!window.assistantResponseSaved && partialMessage && partialMessage.trim().length > 0) {
             await hybridChatService.saveAssistantResponse(
-              partialMessage.trim(),
+              finalWithCaseBlock,
               inputText,
               { 
                 source: 'workforce_agent_backup',
@@ -1079,19 +1130,24 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         userErrorMessage = 'ðŸ”§ Service temporarily unavailable. Please try again in a few moments.';
       }
       
-      setMessages(prev => prev.map(msg =>
-        msg.chat_id === botChatId
-          ? {
-              ...msg,
-              completed: true,
-              text: partialMessage 
-                ? `${cleanStreamText(partialMessage)}\n\n${userErrorMessage}`
-                : userErrorMessage,
-              originalText: partialMessage || '',  // Preserve original text even in error case
-              lastUpdated: Date.now()
-            }
-          : msg
-      ));
+      setMessages(prev => prev.map(msg => {
+        if (msg.chat_id !== botChatId) return msg;
+        const baseCleaned = partialMessage ? cleanStreamText(partialMessage) : '';
+        const { warning, termination } = parseCaseFlagsFromText(partialMessage || '');
+  const hasExistingCaseBlock = /Casecreation Links:/i.test(baseCleaned) || /CASE_LINKS_START/.test(baseCleaned);
+        const withCaseBlock = hasExistingCaseBlock
+          ? baseCleaned
+          : (baseCleaned + buildCaseCreationBlock(warning, termination)).trim();
+        return {
+          ...msg,
+          completed: true,
+          text: partialMessage
+            ? `${withCaseBlock}\n\n${userErrorMessage}`
+            : userErrorMessage,
+          originalText: partialMessage || '',  // Preserve original text even in error case
+          lastUpdated: Date.now()
+        };
+      }));
     } finally {
       setLoading(false);
       setStreamingMessageId(null);
@@ -2483,12 +2539,18 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         ));
       }
       
-      // Mark as complete and stop streaming (apply final text cleaning)
-      setMessages(prev => prev.map(msg => 
-        msg.id === messageId 
-          ? { ...msg, text: cleanStreamText(fullResponse), isRegenerating: false, completed: true }
-          : msg
-      ));
+      // Mark as complete and stop streaming (apply final text cleaning) and append case links
+      {
+        const cleaned = cleanStreamText(fullResponse);
+        const { warning, termination } = parseCaseFlagsFromText(fullResponse);
+  const hasExistingCaseBlock = /Casecreation Links:/i.test(cleaned) || /CASE_LINKS_START/.test(cleaned);
+        const finalText = hasExistingCaseBlock ? cleaned : (cleaned + buildCaseCreationBlock(warning, termination)).trim();
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, text: finalText, isRegenerating: false, completed: true }
+            : msg
+        ));
+      }
       
       setStreamingMessageId(null);
       
@@ -2502,10 +2564,16 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           const chatId = messageToUpdate?.chat_id || messageId;
           
           // Call the existing add_message endpoint - backend will detect chat_id exists and UPDATE
+          // Compute final text with case links for persistence
+          const cleanedForSave = cleanStreamText(fullResponse).trim();
+          const { warning, termination } = parseCaseFlagsFromText(fullResponse);
+          const hasBlock = /Casecreation Links:/i.test(cleanedForSave) || /CASE_LINKS_START/.test(cleanedForSave);
+          const finalForSave = hasBlock ? cleanedForSave : (cleanedForSave + buildCaseCreationBlock(warning, termination)).trim();
+
           await conversationStorage.addMessage(
             currentThread?.id || 'unknown',
             'assistant',
-            cleanStreamText(fullResponse).trim(),
+            finalForSave,
             {
               source: 'workforce_agent_regenerated',
               chat_type: 'bot',

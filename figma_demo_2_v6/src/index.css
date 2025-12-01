@@ -65,6 +65,32 @@ b {
   margin-bottom: 0 !important;
 }
 
+/* Make case creation links look clearly clickable */
+.formatted-text-content .casecreation-links a {
+  color: #1a366f;
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.formatted-text-content .casecreation-links a:hover {
+  color: #0f2a5c;
+  text-decoration: underline;
+}
+
+.formatted-text-content .casecreation-links li {
+  margin: 4px 0;
+}
+
+.formatted-text-content .casecreation-links {
+  text-align: left;
+}
+
+.formatted-text-content .casecreation-links ul {
+  margin: 4px 0 0 0;
+  padding-left: 0;
+  list-style: none;
+}
+
 /* Suggestions dropdown: always mounted, hidden by default via display */
 .suggestions-container.is-hidden {
   display: none;

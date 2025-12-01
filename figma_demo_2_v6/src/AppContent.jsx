@@ -15,9 +15,14 @@ import './App.css';
 import { oktaAuth } from './oktaConfig';
 import PrivateRoute from './PrivateRoute';
 import { Security, useOktaAuth } from '@okta/okta-react';
+import { ensurePublicIdentity, ALL_PUBLIC } from './config/accessControl';
 
 function AppContent() {
   const { oktaAuth, authState } = useOktaAuth();
+  // In public mode, seed a default identity globally
+  React.useEffect(() => {
+    ensurePublicIdentity();
+  }, []);
   const [userQuestion, setUserQuestion] = useState('');
   const [currentThread, setCurrentThread] = useState(null);
   const [isNewChat, setIsNewChat] = useState(false);
@@ -361,6 +366,15 @@ useEffect(() => {
 
   const handleNewChat = () => {
     // Create a new thread immediately when "New Chat" is clicked
+    // Clear any previously active conversation so the next send does not append to an old thread
+    try {
+      if (hybridChatService && typeof hybridChatService.clearActiveConversation === 'function') {
+        hybridChatService.clearActiveConversation();
+      }
+    } catch (e) {
+      console.warn('Failed to clear active conversation (non-fatal):', e?.message || e);
+    }
+
     const newThread = {
       id: 'thread_' + Date.now(),
       title: 'New Chat',
