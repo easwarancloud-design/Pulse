@@ -126,15 +126,15 @@ const PulseEmbedded = ({ userInfo, domainId }) => {
 
   // Predefined questions (dynamic, with fallback defaults)
   const [allQuestions, setAllQuestions] = useState([
-    'Share the latest company updates on AI developments',
-    'What required learning do I have?',
-    'Whose in the office today?',
-    'What are the upcoming project deadlines?',
-    'Show me my recent performance reviews',
-    'What are the current company policies?',
-    'Find available meeting rooms for today',
-    'What are the latest HR announcements?',
-    'Show me my vacation balance and requests'
+    'What is the process for employees to access or review the company’s HR policies?',
+    "How often are HR policies reviewed or updated, and who is responsible for that review?",
+    "Are employees required to acknowledge that they have read and understood HR policies?",
+    "How are policy changes communicated to employees across the organization?",
+    "What should employees do if they are uncertain about the interpretation of a policy?",
+    "What is the company’s policy on paid time off (PTO), and how is it accrued?",
+    "How should employees request vacation or sick leave, and what notice is required?",
+    "What is the policy for unplanned absences or emergencies?",
+    "Are there specific guidelines for working remotely or flexible scheduling?"
   ]);
 
   // Fetch predefined questions on mount (mimic PulseEmbeddedOld logic)
@@ -785,7 +785,7 @@ const PulseEmbedded = ({ userInfo, domainId }) => {
                         style={{
                           display: 'block',
                           fontSize: isInIframe() ? '13px' : '14px',
-                          lineHeight: isInIframe() ? '18px' : '18px',
+                          lineHeight: isInIframe() ? '8px' : '8px',
                           fontFamily: 'Elevance Sans, -apple-system, Roboto, Helvetica, sans-serif',
                           textAlign: 'left',
                           whiteSpace: 'normal',
@@ -839,7 +839,8 @@ const PulseEmbedded = ({ userInfo, domainId }) => {
                   fill="none"
                   xmlns="http://www.w3.org/2000/svg"
                 >
-                  <path fillRule="evenodd" clipRule="evenodd" d="M16.2297 8.46742C16.741 9.50225 17 10.7056 17 12C17 16.7461 13.175 20.6292 8.5 20.6292C8.33398 20.6292 8.16133 20.6124 7.99531 20.6022L10.1203 22.7865L8.925 24L5.33906 20.3865L4.75469 19.7663L5.33906 19.1461L8.925 15.5326L10.1203 16.7461L8.04844 18.8764C8.19453 18.8865 8.35059 18.9034 8.5 18.9034C12.2387 18.9034 15.3 15.7955 15.3 12C15.3 11.2247 15.2104 10.4528 14.9547 9.7618L16.2297 8.46742ZM8.075 0L11.6609 3.61348L12.2453 4.23371L11.6609 4.85393L8.075 8.46742L6.87969 7.25393L8.95156 5.12359C8.80547 5.11348 8.64941 5.09663 8.5 5.09663C4.76133 5.09663 1.7 8.20449 1.7 12C1.7 12.7753 1.87598 13.5472 2.04531 14.2382L0.770312 15.5326C0.258984 14.4978 0 13.29440 12C0 7.25393 3.825 3.37079 8.5 3.37079C8.67265 3.37079 8.83535 3.38764 9.00469 3.39775L6.87969 1.21348L8.075 0Z" fill="white"/>
+                  {/* Corrected refresh icon path to match PulseEmbeddedDemo (fixed malformed numeric sequence) */}
+                  <path fillRule="evenodd" clipRule="evenodd" d="M16.2297 8.46742C16.741 9.50225 17 10.7056 17 12C17 16.7461 13.175 20.6292 8.5 20.6292C8.33398 20.6292 8.16133 20.6124 7.99531 20.6022L10.1203 22.7865L8.925 24L5.33906 20.3865L4.75469 19.7663L5.33906 19.1461L8.925 15.5326L10.1203 16.7461L8.04844 18.8764C8.19453 18.8865 8.35059 18.9034 8.5 18.9034C12.2387 18.9034 15.3 15.7955 15.3 12C15.3 11.2247 15.2104 10.4528 14.9547 9.7618L16.2297 8.46742ZM8.075 0L11.6609 3.61348L12.2453 4.23371L11.6609 4.85393L8.075 8.46742L6.87969 7.25393L8.95156 5.12359C8.80547 5.11348 8.64941 5.09663 8.5 5.09663C4.76133 5.09663 1.7 8.20449 1.7 12C1.7 12.7753 1.87598 13.5472 2.04531 14.2382L0.770312 15.5326C0.258984 14.4978 0 13.2944 0 12C0 7.25393 3.825 3.37079 8.5 3.37079C8.67265 3.37079 8.83535 3.38764 9.00469 3.39775L6.87969 1.21348L8.075 0Z" fill="white"/>
                 </svg>
               </div>
             </button>
