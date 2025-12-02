@@ -112,7 +112,20 @@ export class HybridChatService {
   async getLiveResponse(questionText, sessionId) {
     try {
       // Use original API endpoints for live responses
-      const response = await fetch(API_ENDPOINTS.WORKFORCE_CHAT, {
+      // Append doc_id from URL if present alongside codeName/codename and title
+      let chatEndpointUrl = API_ENDPOINTS.WORKFORCE_CHAT;
+      try {
+        const u = new URL(window.location.href);
+        const id = u.searchParams.get('id');
+        const code = u.searchParams.get('codeName') || u.searchParams.get('codename');
+        const title = u.searchParams.get('title');
+        if (id && code && title) {
+          const sep = chatEndpointUrl.includes('?') ? '&' : '?';
+          chatEndpointUrl = `${chatEndpointUrl}${sep}doc_id=${encodeURIComponent(id)}`;
+        }
+      } catch {}
+
+      const response = await fetch(chatEndpointUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

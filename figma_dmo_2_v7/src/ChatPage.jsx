@@ -756,7 +756,16 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       // Build chat URL with required query params
       const activeConversationId = hybridChatService.getCurrentConversationId();
       const limit = 10; // default seed size for history
-      const chatUrl = `${API_ENDPOINTS.WORKFORCE_CHAT}?conversation_id=${encodeURIComponent(activeConversationId || '')}&limit=${limit}`;
+      // Append doc_id from URL if id, codeName/codename, and title are all present
+      (() => {})(); // placeholder no-op to preserve formatting
+      const currentUrlForDoc = new URL(window.location.href);
+      const docIdParam = currentUrlForDoc.searchParams.get('id');
+      const codeNameParam = currentUrlForDoc.searchParams.get('codeName') || currentUrlForDoc.searchParams.get('codename');
+      const titleParam = currentUrlForDoc.searchParams.get('title');
+      let chatUrl = `${API_ENDPOINTS.WORKFORCE_CHAT}?conversation_id=${encodeURIComponent(activeConversationId || '')}&limit=${limit}`;
+      if (docIdParam && codeNameParam && titleParam) {
+        chatUrl += `&doc_id=${encodeURIComponent(docIdParam)}`;
+      }
       const response = await fetch(chatUrl, {
         method: 'GET',
         headers: {
@@ -1256,10 +1265,14 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
       // Notify parent that auto-send cycle has completed (re-enables New Chat)
       try { onAutoSendComplete && onAutoSendComplete(); } catch {}
-      // Clear URL params post-send to avoid reuse on subsequent actions
+      // Clear only the 'query' param post-send to avoid reuse; keep id, codeName, title for breadcrumbs/context
       try {
         if (window && window.history && typeof window.history.replaceState === 'function') {
-          window.history.replaceState({}, document.title, window.location.pathname);
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('query')) {
+            url.searchParams.delete('query');
+            window.history.replaceState({}, document.title, `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
+          }
         }
       } catch (_) {}
       // Safety: if first user save was deferred and still pending, commit it now
@@ -2317,14 +2330,26 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       setApiTriggered(true); // Set flag to prevent re-execution
       autoTriggerExecutedRef.current = true; // Mark executed to block further duplicate triggers
       
-      // Clear URL parameters immediately after processing to prevent refresh issues
-      window.history.replaceState({}, document.title, window.location.pathname);
+      // Remove only 'query' param immediately after processing to prevent duplicate auto-send; keep id/codeName/title
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('query')) {
+          url.searchParams.delete('query');
+          window.history.replaceState({}, document.title, `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
+        }
+      } catch (_) {}
       
       sendWorkforceAgentMessage(questionText, true); // true = replace existing
     } else if (shouldClearUrl && !shouldCallLiveAPI) {
-      console.log('🧹 Clearing URL params without auto-send (conditions not met)', { shouldClearUrl, shouldCallLiveAPI });
-      // Clear URL even if we're not auto-triggering (e.g., predefined question or already has conversation)
-      window.history.replaceState({}, document.title, window.location.pathname);
+      console.log('🧹 Removing only query param without auto-send (conditions not met)', { shouldClearUrl, shouldCallLiveAPI });
+      // Remove only 'query' param even if we're not auto-triggering (avoid future reuse); keep id/codeName/title
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('query')) {
+          url.searchParams.delete('query');
+          window.history.replaceState({}, document.title, `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
+        }
+      } catch (_) {}
     }
   }, [effectiveQuestion, urlQuery, urlType, urlConversationId, isNewChat, currentThread?.id, apiTriggered]);
 
@@ -2341,8 +2366,14 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   useEffect(() => {
     if (urlQuery && urlType === 'predefined') {
   // DEBUG removed
-      // Clear URL parameters to prevent refresh issues, but don't auto-trigger
-      window.history.replaceState({}, document.title, window.location.pathname);
+      // Remove only the 'query' param to prevent refresh issues, but don't auto-trigger
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('query')) {
+          url.searchParams.delete('query');
+          window.history.replaceState({}, document.title, `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
+        }
+      } catch (_) {}
       // The question will be pre-filled in userInput via the useState initializer above
     }
   }, [urlQuery, urlType]);
@@ -2648,7 +2679,15 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         // Build chat URL with required query params for regenerate
         const activeConversationId = hybridChatService.getCurrentConversationId();
         const regenLimit = 10;
-        const regenUrl = `${API_ENDPOINTS.WORKFORCE_CHAT}?conversation_id=${encodeURIComponent(activeConversationId || '')}&limit=${regenLimit}`;
+        // Append doc_id from URL if id, codeName/codename, and title are all present
+        const regenUrlBase = `${API_ENDPOINTS.WORKFORCE_CHAT}?conversation_id=${encodeURIComponent(activeConversationId || '')}&limit=${regenLimit}`;
+        const currentUrlForDoc2 = new URL(window.location.href);
+        const docIdParam2 = currentUrlForDoc2.searchParams.get('id');
+        const codeNameParam2 = currentUrlForDoc2.searchParams.get('codeName') || currentUrlForDoc2.searchParams.get('codename');
+        const titleParam2 = currentUrlForDoc2.searchParams.get('title');
+        const regenUrl = (docIdParam2 && codeNameParam2 && titleParam2)
+          ? `${regenUrlBase}&doc_id=${encodeURIComponent(docIdParam2)}`
+          : regenUrlBase;
         response = await fetch(regenUrl, {
           method: "GET",
           headers: {

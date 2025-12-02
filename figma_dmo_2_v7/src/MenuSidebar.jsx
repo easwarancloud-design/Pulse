@@ -20,6 +20,24 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
   
   // Ref for search input to focus when expanded
   const searchInputRef = useRef(null);
+  // Map of threadId -> DOM element to auto-scroll into view when active changes
+  const threadItemRefs = useRef(new Map());
+
+  // Auto-scroll the sidebar so the highlighted thread is visible when selection changes
+  useEffect(() => {
+    try {
+      const activeId = currentActiveThread?.id;
+      if (!activeId) return;
+      const el = threadItemRefs.current.get(activeId);
+      if (el && typeof el.scrollIntoView === 'function') {
+        // Center the active item in view for better visibility, with smooth scroll
+        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      }
+    } catch (e) {
+      // Non-fatal: just avoid breaking the UI if something goes wrong
+      console.warn('Sidebar auto-scroll skipped:', e);
+    }
+  }, [currentActiveThread?.id]);
 
   // Load threads from conversation API (no localStorage fallback)
   const loadThreadsFromStorage = async () => {
@@ -885,6 +903,12 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                           ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
                           : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
                       }`}
+                      ref={(el) => {
+                        if (!thread?.id) return;
+                        if (el) threadItemRefs.current.set(thread.id, el);
+                        else threadItemRefs.current.delete(thread.id);
+                      }}
+                      style={{ scrollMarginTop: '64px' }}
                     >
                       <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
                       
@@ -999,6 +1023,12 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                           ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
                           : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
                       }`}
+                      ref={(el) => {
+                        if (!thread?.id) return;
+                        if (el) threadItemRefs.current.set(thread.id, el);
+                        else threadItemRefs.current.delete(thread.id);
+                      }}
+                      style={{ scrollMarginTop: '64px' }}
                     >
                       <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
                       
@@ -1112,6 +1142,12 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                         ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
                         : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
                     }`}
+                    ref={(el) => {
+                      if (!thread?.id) return;
+                      if (el) threadItemRefs.current.set(thread.id, el);
+                      else threadItemRefs.current.delete(thread.id);
+                    }}
+                    style={{ scrollMarginTop: '64px' }}
                   >
                     <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
                     
@@ -1224,6 +1260,12 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
                         ? (isDarkMode ? 'bg-[#2861BB]' : 'bg-blue-100') 
                         : (isDarkMode ? 'hover:bg-[#1F3E81]' : 'hover:bg-gray-50')
                     }`}
+                    ref={(el) => {
+                      if (!thread?.id) return;
+                      if (el) threadItemRefs.current.set(thread.id, el);
+                      else threadItemRefs.current.delete(thread.id);
+                    }}
+                    style={{ scrollMarginTop: '64px' }}
                   >
                     <ChatIcon className="w-6 h-6 flex-shrink-0" color={isDarkMode ? "#FFF" : "#2861BB"} />
                     
