@@ -49,14 +49,9 @@ export const cleanStreamText = (msg) => {
   msg = msg.replace(/Reference Links?:\s*/gi, '');
   msg = msg.replace(/Reference Links?\n/gi, '');
   
-  // Remove the specific reference link titles completely
-  msg = msg.replace(/Time Away\s*/gi, '');
-  msg = msg.replace(/Paid Time Off Policy\s*/gi, '');
-  msg = msg.replace(/Service Contract Act Paid Time Off Policy\s*/gi, '');
-  msg = msg.replace(/Paid Parental Leave Policy\s*/gi, '');
-  msg = msg.replace(/School Related Leaves Policy\s*/gi, '');
-  msg = msg.replace(/Wellness Days Off\s*/gi, '');
-  msg = msg.replace(/My Choice PTO Policy\s*/gi, '');
+  // Preserve link titles so Sources panel can display proper labels
+  // (previously we stripped known policy titles globally, which removed
+  // anchor inner text in saved messages and caused blank link labels).
   
   // Literal \n to actual newline
   msg = msg.replace(/\\n/g, '\n');
