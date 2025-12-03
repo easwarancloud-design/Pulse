@@ -43,3 +43,22 @@ res = conn.getresponse()
 data = res.read()
 print("Decrypted Code")
 print(data.decode('utf-8'))
+
+
+################# Live agent 
+
+
+/user/to/agent/servicenow
+Manager coaching and coaching for corrective action
+{"requestId":"REQ-889f2f5c-df89-4504-bb73-c1d02d927bd9","token":"vaacubed","botToBot":true,"clientSessionId":"","silentMessage":false,"message":{"text":"First_Message","typed":true},"userId":"AL31376","emailId":"easwaran.perumal@elevancehealth.com","username":"Easwar","agent_group":"AgenticHRAdvisor","timestamp":1764740727340,"timezone":"America/New_York","action":"SWITCH","topic":{"name":"AgenticHRAdvisor"}}
+
+{"requestId":"REQ-889f2f5c-df89-4504-bb73-c1d02d927bd9","token":"vaacubed","botToBot":true,"clientSessionId":"","silentMessage":false,"message":{"text":"Hi","typed":true},"userId":"AL31376","emailId":"easwaran.perumal@elevancehealth.com","timestamp":1764740866527,"timezone":"America/New_York"}
+
+
+/user/to/agent/servicenow
+for other HR support
+{"requestId":"REQ-3c5cbc0a-73d0-4e6e-af4a-b512643e0222","token":"vaacubed","botToBot":true,"clientSessionId":"","silentMessage":false,"message":{"text":"First_Message","typed":true},"userId":"AL31376","emailId":"easwaran.perumal@elevancehealth.com","username":"Easwar","agent_group":"AgenticContactCenter","timestamp":1764740963479,"timezone":"America/New_York","action":"SWITCH","topic":{"name":"AgenticContactCenter"}}
+
+{"requestId":"REQ-3c5cbc0a-73d0-4e6e-af4a-b512643e0222","token":"vaacubed","botToBot":true,"clientSessionId":"","silentMessage":false,"message":{"text":"Hi","typed":true},"userId":"AL31376","emailId":"easwaran.perumal@elevancehealth.com","timestamp":1764741033333,"timezone":"America/New_York"}
+
+{"requestId":"REQ-3c5cbc0a-73d0-4e6e-af4a-b512643e0222","token":"vaacubed","botToBot":true,"clientSessionId":"","silentMessage":false,"message":{"text":"You have ended the conversation.","typed":true},"userId":"AL31376","emailId":"user@email.com","timestamp":1764741152985,"timezone":"America/New_York","action":"END_CONVERSATION"}
