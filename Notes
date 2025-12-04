@@ -45,7 +45,7 @@ print("Decrypted Code")
 print(data.decode('utf-8'))
 
 
-################# Live agent 
+################# Live agent user to agent api call
 
 
 /user/to/agent/servicenow
@@ -62,3 +62,34 @@ for other HR support
 {"requestId":"REQ-3c5cbc0a-73d0-4e6e-af4a-b512643e0222","token":"vaacubed","botToBot":true,"clientSessionId":"","silentMessage":false,"message":{"text":"Hi","typed":true},"userId":"AL31376","emailId":"easwaran.perumal@elevancehealth.com","timestamp":1764741033333,"timezone":"America/New_York"}
 
 {"requestId":"REQ-3c5cbc0a-73d0-4e6e-af4a-b512643e0222","token":"vaacubed","botToBot":true,"clientSessionId":"","silentMessage":false,"message":{"text":"You have ended the conversation.","typed":true},"userId":"AL31376","emailId":"user@email.com","timestamp":1764741152985,"timezone":"America/New_York","action":"END_CONVERSATION"}
+
+
+
+########################### live agent raw meesages
+
+ Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"ActionMsg","actionType":"SubscribeToSupportQueue","supportQueue":"{@type=InteractionQueue, external=false, type=interaction, queueAmbChannel=/cs/support_queue/c3lzX2lkPW51bGw=}"}],"score":1,"InteractionID":"c5806fe62b7baa10ca26f26ef291bf4d"}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(1), …}
+chatbot.js:772  No actionable message in body
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"ActionMsg","actionType":"StartConversation","conversationId":"0d80a72e2bfbe610ca26f26ef291bfe8"}],"score":0,"InteractionID":"c5806fe62b7baa10ca26f26ef291bf4d"}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(1), …}
+chatbot.js:772  No actionable message in body
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"OutputText","group":"DefaultText","value":"Please stand by while I connect you to a live agent."},{"uiType":"ActionMsg","actionType":"StartSpinner","spinnerType":"wait_time","message":"Routing you to a live agent...","waitTime":"16 Seconds"}],"agentChat":true,"score":1,"InteractionID":null}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(2), …}
+chatbot.js:682 ⏳ Estimated wait time: 16 Seconds
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"ActionMsg","actionType":"SubscribeToChatPresence","channel":"/sn/rp/sys_cs_conversation/0d80a72e2bfbe610ca26f26ef291bfe8","userDetails":"{name=Perumal, Easwaran, sysId=0eac623c476711147866b288436d4316, avatarPath=null, displayName=Perumal, Easwaran, initials=PE, showNameInHeader=false, userName=AL31376, email=Easwaran.Perumal@elevancehealth.com, channel=null}","chatSessionId":"0d80a72e2bfbe610ca26f26ef291bfe8"}],"agentChat":true,"score":1,"InteractionID":null}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(1), …}
+chatbot.js:772  No actionable message in body
+chatbot.js:887 Response: {status: 'success'}
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"ActionMsg","actionType":"EndSpinner","spinnerType":"wait_time"}],"agentChat":true,"score":1,"InteractionID":null}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(1), …}
+chatbot.js:772  No actionable message in body
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"ActionMsg","actionType":"SwitchToLiveAgent"}],"agentChat":true,"score":1,"InteractionID":"c5806fe62b7baa10ca26f26ef291bf4d"}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(1), …}
+chatbot.js:772  No actionable message in body
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"ActionMsg","actionType":"System","message":"G, Haritha has joined."}],"agentChat":true,"score":1,"InteractionID":null}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(1), …}
+chatbot.js:772  No actionable message in body
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"OutputText","group":"DefaultText","agentInfo":{"sentFromAgent":true,"agentName":"G, Haritha","agentId":"d096ec611bb1bc50b35ecb751a4bcbaa"},"value":"Thank you for contacting support. I am looking into your question now and will be with you shortly."}],"agentChat":true,"score":1,"InteractionID":"c5806fe62b7baa10ca26f26ef291bf4d"}
+chatbot.js:658 📩 Raw message received json msg: {requestId: 'REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef', clientSessionId: '', message: {…}, userId: 'AL31376', body: Array(1), …}
+chatbot.js:887 Response: {status: 'success'}
+chatbot.js:656 📩 Raw message received event data: {"requestId":"REQ-2a90663b-1ab4-45ab-89d2-9379233e29ef","clientSessionId":"","message":{"text":"[SYSYTEM] Hi, User wants need your help.","typed":true},"userId":"AL31376","body":[{"uiType":"OutputText","group":"DefaultText","agentInfo":{"sentFromAgent":true,"agentName":"G, Haritha","agentId":"d096ec611bb1bc50b35ecb751a4bcbaa"},"value":"hi"}],"agentChat":true,"score":1,"InteractionID":"c5806fe62b7baa10ca26f26ef291bf4d"}
