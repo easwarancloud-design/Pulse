@@ -1631,6 +1631,47 @@ async def post_from_servicenow(request: Request):
     return { "status": "received", "requestId": request_id }
 
 
+@app.post("/api/post")
+async def post_raw_from_servicenow(request: Request):
+    """
+    Accepts the full JSON payload from ServiceNow and publishes the RAW body text
+    (un-extracted) to the websocket Redis channel for the given requestId.
+    We still parse JSON only to identify the requestId; the published "text" is the
+    exact raw body string as received.
+    """
+    body_bytes = await request.body()
+    # Preserve exact text while being tolerant to encoding issues
+    body_text = body_bytes.decode("utf-8", errors="replace")
+    logger.info(f"📨 ServiceNow RAW body ({len(body_text)} bytes): {body_text[:4000]}")
+
+    # Attempt to parse the body to obtain requestId for routing; do not modify the published text
+    try:
+        data = json.loads(body_text)
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to parse JSON to extract requestId: {e}")
+        data = {}
+
+    request_id = data.get("requestId") or data.get("request_id")
+    if not request_id:
+        # Without a requestId we cannot route to a chat channel; return 400-style message
+        return {"status": "error", "message": "requestId missing in payload"}
+
+    try:
+        redis_client.publish(
+            f"chat:{request_id}",
+            json.dumps({
+                "from": "agent",
+                "text": body_text,
+                "raw": True
+            })
+        )
+    except Exception as e:
+        logger.info(f"🔴 Redis publish failed: {e}")
+        return {"status": "error", "requestId": request_id, "error": str(e)}
+
+    return {"status": "received", "requestId": request_id}
+
+
 
 def clean_stream_text(msg: str) -> str:
     if not msg:

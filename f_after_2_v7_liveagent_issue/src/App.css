@@ -1,0 +1,68 @@
+/* ServiceNow link bubble styles: theme-aware via global dark mode class */
+.sn-link-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  color: #1a366f;
+  font-weight: 600;
+}
+
+.sn-link-bubble-subtext {
+  margin-top: 8px;
+  color: #787777;
+  font-size: 14px;
+}
+
+/* Dark theme overrides; works if a global .dark class is toggled on body/html */
+body.dark .sn-link-bubble, html.dark .sn-link-bubble {
+  border-color: #2861BB;
+  background: #122F65;
+  color: #FFFFFF;
+}
+
+body.dark .sn-link-bubble-subtext, html.dark .sn-link-bubble-subtext {
+  color: #A0BEEA;
+}
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

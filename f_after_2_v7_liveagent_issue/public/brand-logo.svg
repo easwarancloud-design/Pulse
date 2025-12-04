@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Light blue upward chevron / roof -->
+  <path d="M10 80 L100 10 L190 80 L170 100 L100 40 L30 100 Z" fill="#44B8F3" />
+  <!-- Dark blue base block -->
+  <rect x="40" y="85" width="120" height="105" fill="#122F65" rx="4" />
+  <!-- Optional cutout to mimic brand styling -->
+  <rect x="85" y="115" width="30" height="45" fill="#ffffff" opacity="0.08" />
+  <title>Pulse Brand Logo</title>
+</svg>
