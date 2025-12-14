@@ -515,6 +515,8 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           chat_id: userChatId,
           timestamp: Date.now()
         });
+        // Keep local preview in sync (top-10 cache)
+        try { conversationCacheService?.touch?.(activeConversationId2); } catch (_) {}
       } else if (currentThread?.id) {
         localConversationManager.saveMessageLocally(currentThread.id, {
           type: 'user',
@@ -522,6 +524,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           chat_id: userChatId,
           timestamp: Date.now()
         });
+        try { conversationCacheService?.touch?.(currentThread.id); } catch (_) {}
       }
     };
 
@@ -974,19 +977,41 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
         // Detect live agent control signal in short responses as well
         if (/<<\s*LiveAgent\s*>>/i.test(shortText) || /<\s*LiveAgent\s*>/i.test(shortText)) {
-          setMessages(prev => prev.map(msg =>
-            msg.chat_id === botChatId
-              ? {
-                  ...msg,
-                  type: 'system',
-                  isLiveAgentCard: true,
-                  text: null,
-                  completed: true
-                }
-              : msg
-          ));
-          // Disable input when live agent card is shown - user must select a button
-          setIsLiveAgentCardShowing(true);
+          // Enforce single active live-agent session globally (short-response path)
+          const existing = getActiveLiveAgent();
+          const currentConvId = hybridChatService.getCurrentConversationId() || currentThread?.id;
+          if (existing && existing.conversationId && existing.conversationId !== currentConvId) {
+            // Show guard message and prompt
+            setMessages(prev => prev.map(msg =>
+              msg.chat_id === botChatId
+                ? {
+                    ...msg,
+                    type: 'system',
+                    isLiveAgentCard: false,
+                    text: 'A live agent session is already active in another conversation. End that existing live agent session (Yes/No) and open a fresh live agent here?',
+                    completed: true
+                  }
+                : msg
+            ));
+            crossLiveAgentPromptRef.current = { existingConvId: existing.conversationId, targetConvId: currentConvId, botChatId };
+            setConfirmContext('endExistingToStartHere');
+            setShowConfirm(true);
+          } else {
+            setMessages(prev => prev.map(msg =>
+              msg.chat_id === botChatId
+                ? {
+                    ...msg,
+                    type: 'system',
+                    isLiveAgentCard: true,
+                    text: null,
+                    completed: true
+                  }
+                : msg
+            ));
+            // Disable input when live agent card is shown - user must select a button
+            setIsLiveAgentCardShowing(true);
+            setActiveLiveAgent((requestIdRef.current || 'pending'), currentConvId, null);
+          }
         } else {
           // Regular short text response
           const cleanedShort = cleanStreamText(shortText) || 'Empty response received from API';
@@ -1172,19 +1197,42 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       const completionTime = performance.now();
       // Handle live agent routing
       if (liveAgentTriggered) {
-        setMessages(prev => prev.map(msg => 
-          msg.chat_id === botChatId 
-            ? {
-                ...msg,
-                type: 'system',
-                isLiveAgentCard: true,
-                text: null,
-                completed: true
-              }
-            : msg
-        ));
-        // Disable input when live agent card is shown - user must select a button
-        setIsLiveAgentCardShowing(true);
+        // Enforce single active live-agent session globally
+        const existing = getActiveLiveAgent();
+        const currentConvId = hybridChatService.getCurrentConversationId() || currentThread?.id;
+        if (existing && existing.conversationId && existing.conversationId !== currentConvId) {
+          // Show guard message and prompt to end existing and start here
+          setMessages(prev => prev.map(msg => 
+            msg.chat_id === botChatId 
+              ? {
+                  ...msg,
+                  type: 'system',
+                  isLiveAgentCard: false,
+                  text: 'A live agent session is already active in another conversation. End that existing live agent session (Yes/No) and open a fresh live agent here?',
+                  completed: true
+                }
+              : msg
+          ));
+          crossLiveAgentPromptRef.current = { existingConvId: existing.conversationId, targetConvId: currentConvId, botChatId };
+          setConfirmContext('endExistingToStartHere');
+          setShowConfirm(true);
+        } else {
+          setMessages(prev => prev.map(msg => 
+            msg.chat_id === botChatId 
+              ? {
+                  ...msg,
+                  type: 'system',
+                  isLiveAgentCard: true,
+                  text: null,
+                  completed: true
+                }
+              : msg
+          ));
+          // Disable input when live agent card is shown - user must select a button
+          setIsLiveAgentCardShowing(true);
+          // Mark active session placeholder (requestId will be finalized later)
+          setActiveLiveAgent((requestIdRef.current || 'pending'), currentConvId, null);
+        }
       } else {
         // Mark bot message as completed and append Casecreation Links (frontend-only)
         const cleanedFinal = cleanStreamText(partialMessage);
@@ -1224,6 +1272,19 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
               },
               botChatId
             );
+            // Promote and persist recency so sidebar remains correct on refresh
+            try {
+              const convId = hybridChatService.getCurrentConversationId() || currentThread?.id;
+              if (addConversationImmediateRef?.current?.promoteToTodayTop && convId) {
+                addConversationImmediateRef.current.promoteToTodayTop(convId);
+              }
+              if (convId) {
+                await hybridChatService.updateConversation(convId, {
+                  updated_at: new Date().toISOString(),
+                  last_message_at: new Date().toISOString()
+                });
+              }
+            } catch (_) {}
             
             // Save assistant response to localStorage immediately
             const activeConversationId = hybridChatService.getCurrentConversationId();
@@ -1789,16 +1850,21 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   const [copiedMessage, setCopiedMessage] = useState(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const messagesEndRef = useRef(null);
-  const INACTIVITY_LIMIT = 15 * 60 * 1000; // 15 minutes
+  const INACTIVITY_LIMIT = 1 * 60 * 1000; // 15 minutes
   // Live Agent session state
   const [liveAgent, setLiveAgent] = useState(false);
   const [chatEnded, setChatEnded] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  // Confirm dialog context: 'endChat' (default) or 'endExistingToStartHere'
+  const [confirmContext, setConfirmContext] = useState('endChat');
+  // For cross-thread prompt data when enforcing single live-agent session
+  const crossLiveAgentPromptRef = useRef(null); // { existingConvId, targetConvId, botChatId }
   const [isLiveAgentCardShowing, setIsLiveAgentCardShowing] = useState(false); // Track when live agent card requires button selection
   const buttonRowRef = useRef(null); // Ref to control ButtonRow component imperatively
   const requestIdRef = useRef(null);
   const socketRef = useRef(null);
   const inactivityTimerRef = useRef(null);
+  const timerConversationIdRef = useRef(null); // Track which conversation the inactivity timer belongs to
   // Live agent UX refs
   const agentNameRef = useRef(null);
   const lastAgentMsgAtRef = useRef(0);
@@ -1808,6 +1874,345 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   const stableTitleRef = useRef(null);
   // Track when a send started to avoid clobbering live UI on immediate thread-id switch to empty backend convo
   const lastSendAtRef = useRef(0);
+
+  // ===== Conversation-scoped Live Agent state (End Chat button persistence) =====
+  const LIVE_AGENT_STATE_KEY = (convId) => `liveAgentState_${convId}`;
+  const setLiveAgentStateForConversation = (convId, { active, endChatVisible, expiryTs }) => {
+    if (!convId) return;
+    try {
+      const payload = {
+        active: !!active,
+        endChatVisible: !!endChatVisible,
+        expiryTs: typeof expiryTs === 'number' ? expiryTs : null,
+        updatedAt: Date.now()
+      };
+      localStorage.setItem(LIVE_AGENT_STATE_KEY(convId), JSON.stringify(payload));
+    } catch (_) {}
+  };
+  const getLiveAgentStateForConversation = (convId) => {
+    if (!convId) return { active: false, endChatVisible: false, expiryTs: null };
+    try {
+      const raw = localStorage.getItem(LIVE_AGENT_STATE_KEY(convId));
+      if (!raw) return { active: false, endChatVisible: false, expiryTs: null };
+      const parsed = JSON.parse(raw);
+      // If there's an expiry and it's in the past, treat as inactive
+      if (parsed && parsed.expiryTs && Date.now() > parsed.expiryTs) {
+        return { active: false, endChatVisible: false, expiryTs: parsed.expiryTs };
+      }
+      return {
+        active: !!parsed?.active,
+        endChatVisible: !!parsed?.endChatVisible,
+        expiryTs: parsed?.expiryTs || null
+      };
+    } catch (_) {
+      return { active: false, endChatVisible: false, expiryTs: null };
+    }
+  };
+
+  // Restore End Chat visibility when switching conversations
+  useEffect(() => {
+    try {
+      const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
+      if (!convId) return;
+      // Global guard: only show End Chat if the global active session belongs to this conversation
+      const globalActive = getActiveLiveAgent();
+      const state = getLiveAgentStateForConversation(convId);
+      const isActiveHere = !!globalActive && globalActive.conversationId === convId && !!globalActive.requestId;
+      if (isActiveHere && (state.active || state.endChatVisible)) {
+        // Show End Chat button for this conversation until explicit termination
+        setLiveAgent(true);
+        setChatEnded(false);
+        // Keep confirmation hidden by default until click; button should be visible
+        setShowConfirm(false);
+        // If expiry is set and in future, (re)arm inactivity timer scoped to this conversation
+        if (state.expiryTs && Date.now() < state.expiryTs) {
+          try {
+            // Clear any previous timer
+            if (inactivityTimerRef.current) {
+              clearTimeout(inactivityTimerRef.current);
+              inactivityTimerRef.current = null;
+            }
+            const remainingMs = Math.max(0, state.expiryTs - Date.now());
+            inactivityTimerRef.current = setTimeout(() => {
+              // On timeout, mark as ended and persist cleared state for this conversation
+              const cid = currentThread?.id || hybridChatService.getCurrentConversationId();
+              setLiveAgent(false);
+              setChatEnded(true);
+              setShowConfirm(false);
+              setLiveAgentStateForConversation(cid, { active: false, endChatVisible: false, expiryTs: state.expiryTs });
+            }, remainingMs);
+          } catch (_) {}
+        }
+      } else {
+        // Hide End Chat button for non-active conversations
+        setLiveAgent(false);
+        // Clear any stale local flag for this conversation to avoid lingering End Chat buttons
+        setLiveAgentStateForConversation(convId, { active: false, endChatVisible: false, expiryTs: null });
+      }
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentThread?.id]);
+
+  // On mount: if there is no global active session, clear any lingering per-conversation End Chat flags
+  useEffect(() => {
+    try {
+      const globalActive = getActiveLiveAgent();
+      if (!globalActive) {
+        const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
+        if (convId) {
+          setLiveAgentStateForConversation(convId, { active: false, endChatVisible: false, expiryTs: null });
+          setLiveAgent(false);
+          setChatEnded(false);
+          setShowConfirm(false);
+        }
+      }
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Confirm handler: End existing live-agent session in another thread, then show buttons here
+  const handleConfirmEndExistingAndStartHere = async () => {
+    try {
+      const data = crossLiveAgentPromptRef.current;
+      if (!data) { setShowConfirm(false); setConfirmContext('endChat'); return; }
+      const { existingConvId, targetConvId, botChatId } = data;
+      // Persist end marker in the existing conversation
+      try {
+        const reason = 'You ended the previous live-agent session to start a new one.';
+        const domainid = RESOLVED_DOMAIN_ID;
+        const content = `<<["system","end_conversation","${reason}"]>>`;
+        const chatId = `system_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        await conversationStorage.addMessage(
+          existingConvId,
+          'system',
+          content,
+          { domain_id: domainid },
+          [],
+          chatId
+        );
+      } catch (_) {}
+      // Persist choice markers in the target conversation (Yes)
+      try {
+        const requestId = requestIdRef.current || `REQ-${crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+        const baseMeta = {
+          timestamp: new Date().toISOString(),
+          domain_id: RESOLVED_DOMAIN_ID,
+          request_id: requestId
+        };
+        // 1) Record explicit choice: Yes
+        {
+          const chatId = `system_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+          const content = `<<["system","live_agent_choice","Yes"]>>`;
+          await conversationStorage.addMessage(targetConvId, 'system', content, baseMeta, [], chatId);
+        }
+        // 2) Marker indicating live agent options/buttons were shown
+        {
+          const chatId = `system_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+          const content = `<<["system","live agent options shown"]>>`;
+          await conversationStorage.addMessage(targetConvId, 'system', content, baseMeta, [], chatId);
+        }
+      } catch (persistErr) {
+        console.warn('⚠️ Failed to persist Yes-choice markers:', persistErr);
+      }
+      // Clear global and per-conversation flags
+      clearActiveLiveAgent();
+      setLiveAgentStateForConversation(existingConvId, { active: false, endChatVisible: false, expiryTs: null });
+      // Now show live-agent card/buttons here in targetConvId
+      setMessages(prev => prev.map(msg =>
+        msg.chat_id === botChatId
+          ? { ...msg, type: 'system', isLiveAgentCard: true, text: null, completed: true }
+          : msg
+      ));
+      setIsLiveAgentCardShowing(true);
+      setActiveLiveAgent((requestIdRef.current || 'pending'), targetConvId, null);
+    } finally {
+      setShowConfirm(false);
+      setConfirmContext('endChat');
+      crossLiveAgentPromptRef.current = null;
+    }
+  };
+
+  // ===== Global single-session live-agent registry (enforce one active across all conversations) =====
+  const ACTIVE_LA_KEY = 'activeLiveAgentSession';
+  const getActiveLiveAgent = () => {
+    try {
+      const raw = localStorage.getItem(ACTIVE_LA_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (s?.expiryTs && Date.now() > s.expiryTs) {
+        // expired
+        localStorage.removeItem(ACTIVE_LA_KEY);
+        return null;
+      }
+      return s;
+    } catch (_) { return null; }
+  };
+  const setActiveLiveAgent = (requestId, conversationId, expiryTs = null) => {
+    try {
+      localStorage.setItem(ACTIVE_LA_KEY, JSON.stringify({ requestId, conversationId, startedAt: Date.now(), expiryTs }));
+    } catch (_) {}
+  };
+  const clearActiveLiveAgent = () => {
+    try { localStorage.removeItem(ACTIVE_LA_KEY); } catch (_) {}
+  };
+  // Sync across tabs
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === ACTIVE_LA_KEY) {
+        // Force re-evaluation of End Chat visibility on current thread
+        const state = getActiveLiveAgent();
+        const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
+        const activeHere = state && state.conversationId === convId;
+        setLiveAgent(!!activeHere);
+        setChatEnded(false);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentThread?.id]);
+
+  // Removed global inactivity watchdog to honor per-conversation timers
+
+  // ===== Conversation previews and local-first hydration =====
+  // Prefetch latest 10 Q/A for all conversations when landing on /resultpage
+  useEffect(() => {
+    try {
+      const path = window.location?.pathname || '';
+      if (!/resultpage/i.test(path)) return;
+      const domainid = RESOLVED_DOMAIN_ID;
+      if (!domainid) return;
+      // Backend should provide list of conversations and top-10 per conversation
+      const runPrefetch = async () => {
+        try {
+          const token = await getToken(domainid);
+          const urlTop10 = `${API_ENDPOINTS.CONVERSATIONS_TOP10}`; // expected endpoint
+          const resp = await fetch(urlTop10, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, domainid: domainid.toUpperCase() }
+          });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          // data: [{ id, title, messages: [...] }]
+          if (Array.isArray(data)) {
+            for (const conv of data) {
+              try {
+                const cid = conv.id || conv.conversationId;
+                const title = conv.title || 'Conversation';
+                const messages = Array.isArray(conv.messages) ? conv.messages : [];
+                localConversationManager.saveCompleteConversation(cid, title, messages);
+                if (conversationCacheService && cid) {
+                  try { conversationCacheService.set(cid, { id: cid, title }); } catch (_) {}
+                }
+              } catch (_) {}
+            }
+          }
+
+          // Also fetch and store category buckets (Today/Yesterday/Earlier) for sidebar/local grouping
+          try {
+            const urlBuckets = `${API_ENDPOINTS.CONVERSATIONS_BUCKETS}`; // expected endpoint
+            const respBuckets = await fetch(urlBuckets, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, domainid: domainid.toUpperCase() }
+            });
+            if (respBuckets.ok) {
+              const buckets = await respBuckets.json(); // { today: [...], yesterday: [...], earlier: [...] }
+              try {
+                localStorage.setItem('conversationBuckets', JSON.stringify({
+                  today: buckets?.today || [],
+                  yesterday: buckets?.yesterday || [],
+                  earlier: buckets?.earlier || [],
+                  updatedAt: Date.now()
+                }));
+              } catch (_) {}
+            }
+          } catch (_) {}
+        } catch (_) {}
+      };
+      // Debounce to avoid duplicate calls on strict render
+      if (!window.__prefetchTop10Ran) {
+        window.__prefetchTop10Ran = true;
+        runPrefetch();
+      }
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On conversation switch, use local first; fallback to API if local missing
+  useEffect(() => {
+    try {
+      const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
+      if (!convId) return;
+      const local = localConversationManager.getLocalConversation(convId);
+      const hasLocal = local && Array.isArray(local.messages) && local.messages.length > 0;
+      if (hasLocal) {
+        // Hydrate UI from local without hitting API
+        try {
+          // Replace messages only if current page state is empty or shows a placeholder
+          const currentLen = Array.isArray(messages) ? messages.length : 0;
+          if (currentLen === 0 || (currentLen === 1 && messages[0]?.type === 'system')) {
+            setMessages(local.messages);
+          }
+        } catch (_) {}
+      } else {
+        // Mark to allow one-time API fetch elsewhere, then save locally
+        window.__conversationNeedsFetch = convId;
+      }
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentThread?.id]);
+
+  // Keep storage flags in sync when local liveAgent state changes
+  useEffect(() => {
+    try {
+      const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
+      if (!convId) return;
+      if (liveAgent && !chatEnded) {
+        setLiveAgentStateForConversation(convId, { active: true, endChatVisible: true, expiryTs: null });
+      } else if (!liveAgent && chatEnded) {
+        setLiveAgentStateForConversation(convId, { active: false, endChatVisible: false, expiryTs: null });
+      }
+    } catch (_) {}
+  }, [liveAgent, chatEnded, currentThread?.id]);
+
+  // Expose helpers to start/clear live-agent state for current conversation
+  const markLiveAgentStartedForCurrentConversation = (expiryMs = null) => {
+    try {
+      const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
+      const expiryTs = expiryMs ? (Date.now() + expiryMs) : null;
+      setLiveAgent(true);
+      setChatEnded(false);
+      setShowConfirm(false);
+      setLiveAgentStateForConversation(convId, { active: true, endChatVisible: true, expiryTs });
+      if (expiryTs) {
+        if (inactivityTimerRef.current) {
+          clearTimeout(inactivityTimerRef.current);
+          inactivityTimerRef.current = null;
+        }
+        inactivityTimerRef.current = setTimeout(() => {
+          const cid = currentThread?.id || hybridChatService.getCurrentConversationId();
+          setLiveAgent(false);
+          setChatEnded(true);
+          setShowConfirm(false);
+          setLiveAgentStateForConversation(cid, { active: false, endChatVisible: false, expiryTs });
+        }, Math.max(0, expiryTs - Date.now()));
+      }
+    } catch (_) {}
+  };
+
+  const clearLiveAgentStateForCurrentConversation = () => {
+    try {
+      const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
+      setLiveAgent(false);
+      setChatEnded(true);
+      setShowConfirm(false);
+      setLiveAgentStateForConversation(convId, { active: false, endChatVisible: false, expiryTs: null });
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+    } catch (_) {}
+  };
   
   // ===== Live Agent: Manager coaching (first button) =====
   // Build initial payload for starting live agent session
@@ -2039,7 +2444,13 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         } catch {}
       }
       await postUserToAgent(payload);
-      // Outgoing user message is activity; reset inactivity timer
+      // Outgoing user message is activity; extend global expiry and reset inactivity timer
+      try {
+        const active = getActiveLiveAgent();
+        if (active?.requestId && active?.conversationId) {
+          setActiveLiveAgent(active.requestId, active.conversationId, Date.now() + INACTIVITY_LIMIT);
+        }
+      } catch (_) {}
       resetInactivityTimer(domainid);
     } catch (e) {
       console.error('Failed to send message to live agent:', e);
@@ -2055,13 +2466,17 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   // Note: Wire this into the actual input submission elsewhere in the component
   // If liveAgent is true, route userInput to sendMessageToLiveAgent(text) rather than bot flow.
 
-  const resetInactivityTimer = (domainid) => {
-    if (!liveAgent || chatEnded) return;
+  const resetInactivityTimer = (domainid, force = false) => {
+    if (!force && (!liveAgent || chatEnded)) return;
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
     }
+    // Bind timer to the current conversation ID at the moment of activity
+    try { timerConversationIdRef.current = hybridChatService.getCurrentConversationId(); } catch (_) {}
     inactivityTimerRef.current = setTimeout(() => {
-      terminateLiveAgent("Live agent session ended due to inactivity.", domainid);
+      // Persist system message before terminating due to inactivity for the bound conversation
+      const boundConvId = timerConversationIdRef.current || hybridChatService.getCurrentConversationId();
+      postSystemAndTerminateFor(boundConvId, "Live agent session ended due to inactivity.", domainid);
     }, INACTIVITY_LIMIT);
   };
 
@@ -2282,14 +2697,29 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
       const isFirstMessage = () => !messages.some(m => m.type === 'live_agent');
 
-      ws.onopen = () => {
-        resetInactivityTimer(domainid);
+  ws.onopen = () => {
+            // Extend global expiry on activity
+            try {
+              const active = getActiveLiveAgent();
+              if (active?.requestId && active?.conversationId) {
+                setActiveLiveAgent(active.requestId, active.conversationId, Date.now() + INACTIVITY_LIMIT);
+              }
+            } catch (_) {}
+    // Force-start the inactivity timer immediately on connect, even before liveAgent state reflects true
+    resetInactivityTimer(domainid, true);
       };
 
   ws.onmessage = async (event) => {
         try {
-          // Incoming agent message is activity; reset inactivity timer
-          resetInactivityTimer(domainid);
+          // Incoming agent message is activity; reset inactivity timer and record last agent activity
+          try {
+            const active = getActiveLiveAgent();
+            if (active?.requestId && active?.conversationId) {
+              setActiveLiveAgent(active.requestId, active.conversationId, Date.now() + INACTIVITY_LIMIT);
+            }
+          } catch (_) {}
+          resetInactivityTimer(RESOLVED_DOMAIN_ID);
+          lastAgentMsgAtRef.current = Date.now();
           // Debug: log the raw websocket message for inspection
           try {
             console.group('[LiveAgent] ⬅️ Raw WebSocket message');
@@ -2625,11 +3055,128 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     terminateLiveAgent(message, domainid);
   };
 
+  // Per-conversation termination with explicit conversationId
+  const postSystemAndTerminateFor = (conversationId, message, domainid) => {
+    // Render a visible system bubble ONLY if user is currently viewing this conversation
+    try {
+      if (currentThread?.id && currentThread.id === conversationId) {
+        let isDark = false;
+        try {
+          isDark = document.body.classList.contains('dark') ||
+                   document.documentElement.classList.contains('dark') ||
+                   document.body.getAttribute('data-theme') === 'dark';
+        } catch (_) {}
+        const sysStyle = {
+          backgroundColor: 'transparent',
+          padding: '8px 12px',
+          borderRadius: '10px',
+          color: isDark ? '#ffffff' : '#1a3673',
+          fontWeight: 600,
+          fontFamily: 'Elevance Sans, system-ui, sans-serif',
+          marginBottom: '8px',
+          textAlign: 'center',
+          border: 'none'
+        };
+        setMessages(prev => ([
+          ...prev,
+          {
+            id: prev.length + 1,
+            type: 'system',
+            text: (<div style={sysStyle}>{String(message).trim()}</div>)
+          }
+        ]));
+      }
+    } catch (_) {}
+
+    // Persist system reason and end_conversation marker to the specific conversation
+    (async () => {
+      try {
+        const requestId = requestIdRef.current || `REQ-${crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+        const baseMeta = {
+          timestamp: new Date().toISOString(),
+          domain_id: RESOLVED_DOMAIN_ID,
+          request_id: requestId
+        };
+        const systemMsgs = [
+          { message },
+          { message: `<<["system","end_conversation","${message}"]>>` }
+        ];
+        for (const s of systemMsgs) {
+          const chatId = `system_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+          const content = String(s.message).trim();
+          await conversationStorage.addMessage(conversationId, 'system', content, baseMeta, [], chatId);
+        }
+        // Also clear End Chat visibility for that conversation specifically
+        try {
+          setLiveAgentStateForConversation(conversationId, { active: false, endChatVisible: false, expiryTs: null });
+        } catch (_) {}
+      } catch (persistErr) {
+        console.warn('⚠️ Failed to persist system termination messages (per-conversation):', persistErr);
+      }
+    })();
+
+    terminateLiveAgent(message, domainid);
+  };
+
   const confirmEndChat = () => {
     setShowConfirm(true);
   };
 
   const cancelEndChat = () => {
+    // If declining the cross-thread prompt, show a friendly WorkPal continuation message
+    // and persist markers so previous chats can render the decision consistently
+    try {
+      // Some flows may not set confirmContext precisely; also check if cross-thread prompt data exists
+      if (confirmContext === 'endExistingToStartHere' || crossLiveAgentPromptRef.current) {
+        // Local UI bubble
+        const bubble = (
+          <div className={`p-3 rounded-lg ${isDarkMode ? 'bg-transparent text-white' : 'bg-transparent text-[#2c3e50]'}`} style={{ textAlign: 'left' }}>
+            You're continuing with <strong>WorkPal</strong> in this conversation. Ask your next question anytime.
+          </div>
+        );
+        setMessages(prev => ([...prev, { id: prev.length + 1, type: 'system', text: bubble, completed: true }]));
+
+        // Persist choice and continuation markers
+        (async () => {
+          try {
+            const conversationId = hybridChatService.getCurrentConversationId();
+            if (!conversationId) return;
+            const requestId = requestIdRef.current || `REQ-${crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+            const baseMeta = {
+              timestamp: new Date().toISOString(),
+              domain_id: RESOLVED_DOMAIN_ID,
+              request_id: requestId
+            };
+            // 1) Record explicit choice: No to ending existing session
+            {
+              const chatId = `system_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+              const content = `<<["system","live_agent_choice","No"]>>`;
+              await conversationStorage.addMessage(conversationId, 'system', content, baseMeta, [], chatId);
+            }
+            // 2) Persist button_selected marker for ContinueChatting
+            {
+              const chatId = `system_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+              const content = `<<["system","button_selected","ContinueChatting"]>>`;
+              await conversationStorage.addMessage(conversationId, 'system', content, baseMeta, [], chatId);
+            }
+            // 3) Persist a plain system message marker to re-render on retrieval
+            {
+              const chatId = `system_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+              const content = `<<["system","you can continue chatting here with workpal"]>>`;
+              await conversationStorage.addMessage(conversationId, 'system', content, baseMeta, [], chatId);
+            }
+          } catch (persistErr) {
+            console.warn('⚠️ Failed to persist decline/continue markers:', persistErr);
+          }
+        })();
+
+        // Ensure any live-agent card/buttons are not shown here
+        setIsLiveAgentCardShowing(false);
+        // Clear prompt context/data to avoid stale state
+        setConfirmContext('endChat');
+        crossLiveAgentPromptRef.current = null;
+      }
+    } catch (_) {}
     setShowConfirm(false);
   };
 
@@ -2688,17 +3235,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   }, []);
 
   useEffect(() => {
-    // Close live agent session when switching threads
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-      setLiveAgent(false);
-      setChatEnded(true);
-    }
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
+    // Do not close live agent session or clear its inactivity timer on thread switch.
+    // Keeping the session alive allows the per-conversation timer to expire and
+    // persist the termination message to that conversation while the user views others.
   }, [currentThread?.id]);
 
   // Ensure domain ID is properly set in localStorage
@@ -2847,22 +3386,21 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     // Removed debug marker
       }
     } else if (!isNewChat && currentThread && (!currentThread.conversation || currentThread.conversation.length === 0)) {
-      // Show fallback message for existing chats that failed to load (404 errors, etc.)
-    // Removed debug marker
-      const fallbackMessages = [
+      // Show a neutral loading message while the conversation is being hydrated from local storage or API
+      const loadingMessages = [
         {
           id: 1,
           type: 'assistant',
-          text: `Unable to load the conversation "${currentThread.title || currentThread.id}". This may happen if the conversation was deleted or is temporarily unavailable. You can start a new conversation by typing your message below.`,
+          text: 'Loading this conversation... Please wait while we fetch the latest messages.',
           isWelcome: true,
-          isError: true
+          isError: false
         }
       ];
       if (isThreadSwitch || uiLen === 0) {
-        setMessages(fallbackMessages);
+        setMessages(loadingMessages);
         lastLoadedThreadIdRef.current = currentId;
       } else {
-  // DEBUG removed
+        // Keep current UI if not a real thread switch to avoid flicker
       }
     } else if (currentThread && !currentThread.conversation) {
       // Safety fallback for any other edge cases
@@ -3339,9 +3877,37 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
         // Echo user message into chat immediately
         const userChatId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         setMessages(prev => ([...prev, { id: prev.length + 1, type: 'user', text: questionToSend, chat_id: userChatId }]));
+        // Promote this conversation to Today top immediately in the sidebar
+        try {
+          const convId = hybridChatService.getCurrentConversationId() || currentThread?.id;
+          if (addConversationImmediateRef?.current?.promoteToTodayTop && convId) {
+            addConversationImmediateRef.current.promoteToTodayTop(convId);
+          }
+          // Update backend timestamps so fetch returns it under Today and at the top
+          if (convId) {
+            await hybridChatService.updateConversation(convId, {
+              updated_at: new Date().toISOString(),
+              last_message_at: new Date().toISOString()
+            });
+          }
+        } catch (_) {}
         await sendMessageToLiveAgent(questionToSend);
       } else {
         // Use workforce agent for real responses
+        // Promote this conversation to Today top immediately in the sidebar
+        try {
+          const convId = hybridChatService.getCurrentConversationId() || currentThread?.id;
+          if (addConversationImmediateRef?.current?.promoteToTodayTop && convId) {
+            addConversationImmediateRef.current.promoteToTodayTop(convId);
+          }
+          // Update backend timestamps so fetch returns it under Today and at the top
+          if (convId) {
+            await hybridChatService.updateConversation(convId, {
+              updated_at: new Date().toISOString(),
+              last_message_at: new Date().toISOString()
+            });
+          }
+        } catch (_) {}
         await sendWorkforceAgentMessage(questionToSend);
       }
     }
@@ -4242,10 +4808,12 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             <div className="max-w-[760px] mx-auto mb-3">
               <div style={{ textAlign: 'center', marginBottom: '8px' }}>
                 <span style={{ marginRight: '12px', fontWeight: 600, color: isDarkMode ? '#A0BEEA' : '#1a3673' }}>
-                  End Chat?
+                  {confirmContext === 'endExistingToStartHere'
+                    ? 'End that existing live agent session and open a fresh live agent here?'
+                    : 'End Chat?'}
                 </span>
                 <button
-                  onClick={endChat}
+                  onClick={confirmContext === 'endExistingToStartHere' ? handleConfirmEndExistingAndStartHere : endChat}
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -4261,7 +4829,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                   Yes
                 </button>
                 <button
-                  onClick={cancelEndChat}
+                  onClick={() => { cancelEndChat(); }}
                   style={{
                     background: 'transparent',
                     border: 'none',

@@ -55,6 +55,10 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
       const conversations = await hybridChatService.getConversationHistory(50);
       
       if (conversations && Array.isArray(conversations) && conversations.length > 0) {
+        // Overlay: recent interactions map to preserve optimistic reordering across refresh
+        const RECENT_KEY = 'recent_conversation_interactions';
+        let recentMap = {};
+        try { recentMap = JSON.parse(localStorage.getItem(RECENT_KEY) || '{}'); } catch (_) { recentMap = {}; }
         // Convert API conversations to thread format
         const today = [];
         const yesterday = [];
@@ -86,20 +90,34 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
           // Prefer the most recent timestamp available (updated_at or last_message_at), then created
           const tsRaw = conv.updated_at || conv.last_message_at || conv.createdAt || conv.created_at;
           const createdAt = tsRaw ? new Date(tsRaw) : new Date();
+          const updatedAt = conv.updated_at ? new Date(conv.updated_at) : createdAt;
+          const recentTs = recentMap[conv.id] ? new Date(recentMap[conv.id]).getTime() : 0;
+          const effectiveMs = Math.max(createdAt.getTime(), updatedAt.getTime(), recentTs);
+          const sortTs = effectiveMs;
 
           // Use local calendar day grouping with a grace window to account for UTC/region differences
-          const msAgo = now.getTime() - createdAt.getTime();
+          const msAgo = now.getTime() - effectiveMs;
           const GRACE_WINDOW_MS = 18 * 60 * 60 * 1000; // 18 hours
-          if (createdAt >= todayStart || msAgo < GRACE_WINDOW_MS) {
-            today.push(thread);
-          } else if (createdAt >= yesterdayStart) {
-            yesterday.push(thread);
-          } else if (createdAt >= lastWeekStart) {
-            lastWeek.push(thread);
-          } else if (createdAt >= last30DaysStart) {
-            last30Days.push(thread);
+          if (effectiveMs >= todayStart.getTime() || msAgo < GRACE_WINDOW_MS) {
+            today.push({ ...thread, _sortTs: sortTs });
+          } else if (effectiveMs >= yesterdayStart.getTime()) {
+            yesterday.push({ ...thread, _sortTs: sortTs });
+          } else if (effectiveMs >= lastWeekStart.getTime()) {
+            lastWeek.push({ ...thread, _sortTs: sortTs });
+          } else if (effectiveMs >= last30DaysStart.getTime()) {
+            last30Days.push({ ...thread, _sortTs: sortTs });
           }
         });
+
+        // Sort each group by most recent update time, descending
+        const sortDesc = (a, b) => (b?._sortTs || 0) - (a?._sortTs || 0);
+        today.sort(sortDesc);
+        yesterday.sort(sortDesc);
+        lastWeek.sort(sortDesc);
+        last30Days.sort(sortDesc);
+
+        // Strip helper field before returning
+        const strip = arr => arr.map(({ _sortTs, ...rest }) => rest);
         
         console.log('✅ Loaded threads from conversation API:', { 
           today: today.length, 
@@ -108,7 +126,7 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
           last30Days: last30Days.length 
         });
         
-        return { today, yesterday, lastWeek, last30Days };
+  return { today: strip(today), yesterday: strip(yesterday), lastWeek: strip(lastWeek), last30Days: strip(last30Days) };
       } else {
         console.log('📭 No conversations found in API, using empty structure');
         return {
@@ -247,13 +265,58 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
     });
   };
 
+  // Promote a conversation to the top of Today's category
+  const promoteConversationToTodayTop = (conversationId) => {
+    if (!conversationId) return;
+    // Persist a recent interaction timestamp so refresh keeps this at the top
+    try {
+      const RECENT_KEY = 'recent_conversation_interactions';
+      const nowIso = new Date().toISOString();
+      const map = JSON.parse(localStorage.getItem(RECENT_KEY) || '{}');
+      map[conversationId] = nowIso;
+      // Prune old entries > 3 days to avoid unbounded growth
+      const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+      const cutoff = Date.now() - THREE_DAYS;
+      for (const [k, v] of Object.entries(map)) {
+        if (!v || isNaN(Date.parse(v)) || Date.parse(v) < cutoff) delete map[k];
+      }
+      localStorage.setItem(RECENT_KEY, JSON.stringify(map));
+    } catch (_) {}
+    setAllThreads(prev => {
+      const safePrev = {
+        today: Array.isArray(prev.today) ? prev.today : [],
+        yesterday: Array.isArray(prev.yesterday) ? prev.yesterday : [],
+        lastWeek: Array.isArray(prev.lastWeek) ? prev.lastWeek : [],
+        last30Days: Array.isArray(prev.last30Days) ? prev.last30Days : []
+      };
+
+      // Find existing thread data if present in any group
+      const existing = [...safePrev.today, ...safePrev.yesterday, ...safePrev.lastWeek, ...safePrev.last30Days]
+        .find(t => t && t.id === conversationId);
+      const nowIso = new Date().toISOString();
+      const thread = existing ? { ...existing, updated_at: nowIso, last_message_at: nowIso } : { id: conversationId, title: existing?.title || 'Untitled', updated_at: nowIso, last_message_at: nowIso };
+
+      const pruneId = (threads) => threads.filter(t => t && t.id !== conversationId);
+
+      return {
+        today: [thread, ...pruneId(safePrev.today)],
+        yesterday: pruneId(safePrev.yesterday),
+        lastWeek: pruneId(safePrev.lastWeek),
+        last30Days: pruneId(safePrev.last30Days)
+      };
+    });
+
+    console.log('\u2705 Promoted conversation to Today top:', { conversationId });
+  };
+
   // Expose all functions to parent component
   useEffect(() => {
     if (onAddConversationImmediate && onAddConversationImmediate.current !== undefined) {
       onAddConversationImmediate.current = {
         addConversation: addConversationImmediately,
         updateTitle: updateConversationTitle,
-        updateId: updateConversationId
+        updateId: updateConversationId,
+        promoteToTodayTop: promoteConversationToTodayTop
       };
     }
   }, [onAddConversationImmediate]);
