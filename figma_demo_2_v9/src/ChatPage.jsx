@@ -445,6 +445,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     lastSendAtRef.current = Date.now();
   // Explicitly force scroll to bottom on user send
   forceScrollRef.current = true;
+  // Consume the prefill guard since user is sending the question
+  console.log('🛡️ [DEBUG] Consuming prefill guard on send');
+  prefillGuardRef.current = false;
     
     // ðŸ”„ Reset save flags for new message
     window.userQuestionSaved = false;
@@ -593,6 +596,29 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
             window.__creatingConversationGuard.id = backendConversationId;
           }
           
+          // 🎯 CRITICAL: Update the currentThread ID from temp thread_XXXX to actual conv_XXXX
+          // This ensures the sidebar shows one entry that gets updated, not two separate entries
+          if (currentThread && backendConversationId) {
+            const oldThreadId = currentThread.id;
+            currentThread.id = backendConversationId;
+            console.log('🔄 [DEBUG] Updated thread ID', { oldId: oldThreadId, newId: backendConversationId });
+            
+            // Update hybridChatService to use the new conversation ID
+            if (hybridChatService) {
+              hybridChatService.setActiveConversation(backendConversationId);
+            }
+            
+            // Update sidebar to use the new conversation ID
+            if (addConversationImmediateRef.current) {
+              addConversationImmediateRef.current.updateId(oldThreadId, backendConversationId);
+            }
+            
+            // Notify parent of the ID change
+            if (onThreadUpdate) {
+              onThreadUpdate({ ...currentThread, id: backendConversationId });
+            }
+          }
+          
           // 🎯 Generate proper title via API in background (non-blocking)
           generateConversationTitle(inputText, conversationStorage.defaultUserId).then(apiTitle => {
             if (apiTitle && apiTitle !== initialTitle) {
@@ -719,6 +745,23 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
           const conversationId = await hybridChatService.startNewConversation(initialTitle);
           if (conversationId) {
             window.__creatingConversationGuard.id = conversationId;
+          }
+          
+          // 🎯 Update currentThread ID if we have one (similar to the other path)
+          if (currentThread && conversationId) {
+            const oldThreadId = currentThread.id;
+            currentThread.id = conversationId;
+            console.log('🔄 [DEBUG] Updated thread ID (new path)', { oldId: oldThreadId, newId: conversationId });
+            
+            // Update hybridChatService to use the new conversation ID
+            if (hybridChatService) {
+              hybridChatService.setActiveConversation(conversationId);
+            }
+            
+            // Notify parent of the ID change
+            if (onThreadUpdate) {
+              onThreadUpdate({ ...currentThread, id: conversationId });
+            }
           }
           
           // 🎯 Add to sidebar - only for truly new conversations
@@ -1488,6 +1531,7 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       setLoading(false);
       setStreamingMessageId(null);
       // Clear any pre-filled input after completion to prevent unintended reuse
+      console.log('🧹 [DEBUG] Clearing input after send completion');
       try { setUserInput(''); } catch {}
       // Clear global reentrancy guard
       try { window.__sendInProgress = null; } catch {}
@@ -1613,18 +1657,38 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
   };
 
+  const prefillGuardRef = useRef(false); // Prevent clearing prefilled question until user sends or edits
   const [userInput, setUserInput] = useState(() => {
+    console.log('🔄 [DEBUG] Initializing userInput state', { urlConversationId, isNewChat, effectiveQuestion, urlQuery, urlType });
     // Do NOT pre-fill when navigating to an existing conversation via conversationId
     if (urlConversationId) {
+      console.log('📝 [DEBUG] userInput init: empty (existing conversation)', urlConversationId);
       return '';
     }
     // Pre-fill input only for true new chats with predefined question
     if ((isNewChat && effectiveQuestion && (currentThread?.title === 'New Chat' || effectiveType === 'predefined')) || 
         ((urlQuery && urlType === 'predefined') && !urlConversationId)) {
+      console.log('📝 [DEBUG] userInput init: prefilled', { effectiveQuestion, isNewChat, urlType });
       return effectiveQuestion;
     }
+    console.log('📝 [DEBUG] userInput init: empty (fallback)');
     return '';
   });
+
+  // Mark that input is prefilled from predefined question to avoid immediate clearing on hydration/thread effects
+  useEffect(() => {
+    if (userInput && (effectiveType === 'predefined' || (urlQuery && urlType === 'predefined'))) {
+      console.log('🛡️ [DEBUG] Setting prefill guard TRUE', { userInput, effectiveType, urlType });
+      prefillGuardRef.current = true;
+    } else if (prefillGuardRef.current && !userInput) {
+      console.log('🛡️ [DEBUG] Input empty, but guard still active', { userInput, effectiveType, urlType });
+    }
+  }, [userInput, effectiveType, urlQuery, urlType]);
+  
+  // Debug: Track all userInput changes
+  useEffect(() => {
+    console.log('📝 [DEBUG] userInput changed:', { userInput, prefillGuard: prefillGuardRef.current, urlType, urlQuery });
+  }, [userInput]);
   
   const [messages, setMessages] = useState(() => {
     // Priority 0: Load existing conversation from current thread (with multiple messages) — MUST come first
@@ -3334,7 +3398,10 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
     // If switching to a new thread with no messages yet (loading), clear UI instead of showing previous conversation
     if (isThreadSwitch && backendLen === 0) {
-      setMessages([]);
+      // Do not clear welcome screen for fresh New Chat (predefined/manual new thread)
+      if (!(isNewChat && (currentThread?.title === 'New Chat'))) {
+        setMessages([]);
+      }
       lastLoadedThreadIdRef.current = currentId;
       // Do not return; allow later effects to populate when conversation arrives
     }
@@ -3377,8 +3444,13 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       // Remember that we've loaded this thread into the UI
       lastLoadedThreadIdRef.current = currentId;
     // Removed debug marker
-      // Clear the input when switching to an existing thread
-      setUserInput('');
+      // Clear the input when switching to an existing thread (but respect prefill guard)
+      if (!prefillGuardRef.current) {
+        console.log('🧹 [DEBUG] Clearing input: switching to existing thread', { threadId: currentThread?.id, threadTitle: currentThread?.title });
+        setUserInput('');
+      } else {
+        console.log('🛡️ [DEBUG] Input clear BLOCKED by prefill guard (thread load)', { threadId: currentThread?.id, userInput });
+      }
     } else if (isNewChat && currentThread && (!currentThread.conversation || currentThread.conversation.length === 0)) {
       // Show welcome message for new chats without conversation
     // Removed debug marker
@@ -3439,7 +3511,13 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
   // Clear input when switching to existing threads
   useEffect(() => {
     if (currentThread?.conversation && currentThread.conversation.length > 0) {
-      setUserInput('');
+      // Do not clear if the input was prefilled from a predefined question and not yet sent
+      if (!prefillGuardRef.current) {
+        console.log('🧹 [DEBUG] Clearing input: switching to existing thread (guard check passed)', { threadId: currentThread?.id });
+        setUserInput('');
+      } else {
+        console.log('🛡️ [DEBUG] Input clear BLOCKED by prefill guard', { threadId: currentThread?.id, userInput });
+      }
     }
     // Reset API trigger flag when switching threads
     setApiTriggered(false);
@@ -3767,15 +3845,9 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
   // Auto-trigger live API for questions from main page or embedded page
   useEffect(() => {
-    // CRITICAL: Clear URL params immediately on mount to prevent re-use when switching threads
-    const shouldClearUrl = (urlQuery || urlType) && !apiTriggered;
-    // DEBUG: Evaluate auto-trigger conditions
-    try {
-      console.groupCollapsed('🧪 Auto-trigger evaluation');
-      console.log('Inputs:', { urlQuery, urlType, urlConversationId, effectiveQuestion, isNewChat, apiTriggered, conversationLength: currentThread?.conversation?.length || 0 });
-      console.log('Guards:', { manualQueryConsumed: window.__manualQueryConsumed || false, sendInProgress: !!window.__sendInProgress });
-      console.groupEnd();
-    } catch (_) {}
+    console.log('🧪 Auto-trigger evaluation');
+    console.log('Inputs:', { urlQuery, urlType, urlConversationId, effectiveQuestion, isNewChat, apiTriggered, conversationLength: currentThread?.conversation?.length || 0 });
+    console.log('Guards:', { manualQueryConsumed: window.__manualQueryConsumed || false, sendInProgress: !!window.__sendInProgress });
 
     const manualConsumed = !!window.__manualQueryConsumed;
     const shouldCallLiveAPI = !manualConsumed && !autoTriggerExecutedRef.current && (
@@ -3806,22 +3878,58 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       } catch (_) {}
       
       sendWorkforceAgentMessage(questionText, true); // true = replace existing
-    } else if (shouldClearUrl && !shouldCallLiveAPI) {
-      console.log('🧹 Removing only query param without auto-send (conditions not met)', { shouldClearUrl, shouldCallLiveAPI });
-      // Remove only 'query' param even if we're not auto-triggering (avoid future reuse); keep id/codeName/title
-      try {
-        const url = new URL(window.location.href);
-        if (url.searchParams.has('query')) {
-          url.searchParams.delete('query');
-          window.history.replaceState({}, document.title, `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
-        }
-      } catch (_) {}
+    } else {
+      console.log('🚫 [DEBUG] Auto-trigger conditions not met', { shouldCallLiveAPI, effectiveQuestion, apiTriggered });
+      // Do NOT remove URL params for predefined flows - let them persist
+      if (urlType !== 'predefined') {
+        // Remove only 'query' param for non-predefined flows to avoid future reuse; keep id/codeName/title
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('query')) {
+            url.searchParams.delete('query');
+            window.history.replaceState({}, document.title, `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
+            console.log('🧹 [DEBUG] Removed query param for non-predefined flow');
+          }
+        } catch (_) {}
+      }
     }
   }, [effectiveQuestion, urlQuery, urlType, urlConversationId, isNewChat, currentThread?.id, apiTriggered]);
+
+  // Ensure input prefill is preserved when arriving with a predefined question via URL
+  useEffect(() => {
+    const arrivingWithPredefined = urlQuery && urlType === 'predefined' && !urlConversationId;
+    if (!arrivingWithPredefined) return;
+
+    // Prefer parent (AppContent) to create the New Chat thread; just protect the input here.
+    prefillGuardRef.current = true;
+
+    // Fallback: if parent hasn't switched to a fresh New Chat after a short delay, trigger it once.
+    const t = setTimeout(() => {
+      const stillNotFresh = !isNewChat || currentThread?.conversation?.length > 0 || currentThread?.title !== 'New Chat';
+      // Don't trigger new chat during predefined flows or if send is in progress
+      const isInPredefinedFlow = urlType === 'predefined' || (urlQuery && urlType === 'predefined');
+      const isSendInProgress = window.__sendInProgress;
+      
+      if (stillNotFresh && !isInPredefinedFlow && !isSendInProgress) {
+        try {
+          console.log('🔄 [DEBUG] Auto-triggering new chat fallback', { stillNotFresh, isInPredefinedFlow, isSendInProgress });
+          prefillGuardRef.current = true;
+          onNewChat && onNewChat();
+        } catch (_) {}
+      } else {
+        console.log('🚫 [DEBUG] Skipping new chat fallback', { stillNotFresh, isInPredefinedFlow, isSendInProgress, urlType });
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [urlQuery, urlType, urlConversationId, isNewChat, currentThread?.id]);
 
   // On conversation switch, ensure we show only the latest PAGE_SIZE and set up pagination flags
   useEffect(() => {
     try {
+      // Skip hydration/background fetch for brand-new chats (predefined/manual new thread)
+      if (isNewChat && (!currentThread?.conversation || currentThread.conversation.length === 0)) {
+        return;
+      }
       const convId = currentThread?.id || hybridChatService.getCurrentConversationId();
       if (!convId) return;
       const local = localConversationManager.getLocalConversation(convId);
@@ -3844,6 +3952,10 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
       // Background fetch full conversation to power pagination
       (async () => {
         try {
+          // Again, do not attempt to load conversation history for a brand-new chat with no backend ID
+          if (isNewChat && (!currentThread?.conversation || currentThread.conversation.length === 0)) {
+            return;
+          }
           conversationLoader.setUserId(RESOLVED_DOMAIN_ID);
           const convo = await conversationLoader.loadConversation(convId, { includeMessages: true, forceRefresh: false });
           if (!convo || !Array.isArray(convo.messages)) return;
@@ -3921,21 +4033,18 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
     }
   }, [isNewChat, currentThread?.id]);
 
-  // Handle predefined questions - just clear URL params without auto-triggering
+  // Predefined questions: keep URL params intact (no auto-send). Ensure input stays populated even after rerenders.
   useEffect(() => {
-    if (urlQuery && urlType === 'predefined') {
-  // DEBUG removed
-      // Remove only the 'query' param to prevent refresh issues, but don't auto-trigger
-      try {
-        const url = new URL(window.location.href);
-        if (url.searchParams.has('query')) {
-          url.searchParams.delete('query');
-          window.history.replaceState({}, document.title, `${url.pathname}${url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''}`);
-        }
-      } catch (_) {}
-      // The question will be pre-filled in userInput via the useState initializer above
+    if (urlType === 'predefined' && !window.__predefinedQuestionSent) {
+      // If for any reason the input is empty (e.g., StrictMode remount timing), restore from urlQuery or userQuestion
+      if (!userInput && (urlQuery || userQuestion)) {
+        console.log('🔄 [DEBUG] Restoring input from predefined', { urlQuery, userQuestion, userInput });
+        setUserInput(urlQuery || userQuestion || '');
+        prefillGuardRef.current = true;
+      }
+      // Do NOT remove the 'query' param for predefined flows; it can be cleared later after first send
     }
-  }, [urlQuery, urlType]);
+  }, [urlType, urlQuery, userQuestion, userInput]);
 
   // Load feedback states when conversation changes
   useEffect(() => {
@@ -3987,47 +4096,70 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
 
   const handleSendMessage = async () => {
     if (userInput.trim() && !loading && !showConfirm) {
-      // Capture the question then clear input immediately so it disappears while streaming starts
-      const questionToSend = userInput.trim();
-      setUserInput(''); // clear before triggering API
-      
-      // If live agent is active, route to USER_TO_AGENT; otherwise use bot flow
-      if (liveAgent) {
-        // Echo user message into chat immediately
-        const userChatId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-        setMessages(prev => ([...prev, { id: prev.length + 1, type: 'user', text: questionToSend, chat_id: userChatId }]));
-        // Promote this conversation to Today top immediately in the sidebar
-        try {
-          const convId = hybridChatService.getCurrentConversationId() || currentThread?.id;
-          if (addConversationImmediateRef?.current?.promoteToTodayTop && convId) {
-            addConversationImmediateRef.current.promoteToTodayTop(convId);
-          }
-          // Update backend timestamps so fetch returns it under Today and at the top
-          if (convId) {
-            await hybridChatService.updateConversation(convId, {
-              updated_at: new Date().toISOString(),
-              last_message_at: new Date().toISOString()
-            });
-          }
-        } catch (_) {}
-        await sendMessageToLiveAgent(questionToSend);
-      } else {
-        // Use workforce agent for real responses
-        // Promote this conversation to Today top immediately in the sidebar
-        try {
-          const convId = hybridChatService.getCurrentConversationId() || currentThread?.id;
-          if (addConversationImmediateRef?.current?.promoteToTodayTop && convId) {
-            addConversationImmediateRef.current.promoteToTodayTop(convId);
-          }
-          // Update backend timestamps so fetch returns it under Today and at the top
-          if (convId) {
-            await hybridChatService.updateConversation(convId, {
-              updated_at: new Date().toISOString(),
-              last_message_at: new Date().toISOString()
-            });
-          }
-        } catch (_) {}
-        await sendWorkforceAgentMessage(questionToSend);
+      try {
+        // Set flag to prevent automatic new chat creation during send
+        window.__sendInProgress = true;
+        console.log('🚀 [DEBUG] Send started, setting __sendInProgress=true');
+        
+        // Capture the question then clear input immediately so it disappears while streaming starts
+        const questionToSend = userInput.trim();
+        console.log('🚀 [DEBUG] Clearing input in handleSendMessage', { questionToSend, userInput });
+        setUserInput(''); // clear before triggering API
+        
+        // If live agent is active, route to USER_TO_AGENT; otherwise use bot flow
+        if (liveAgent) {
+          // Echo user message into chat immediately
+          const userChatId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+          setMessages(prev => ([...prev, { id: prev.length + 1, type: 'user', text: questionToSend, chat_id: userChatId }]));
+          // Promote this conversation to Today top immediately in the sidebar
+          try {
+            const convId = hybridChatService.getCurrentConversationId() || currentThread?.id;
+            if (addConversationImmediateRef?.current?.promoteToTodayTop && convId) {
+              addConversationImmediateRef.current.promoteToTodayTop(convId);
+            }
+            // Update backend timestamps so fetch returns it under Today and at the top
+            if (convId && !/^thread_\d+/.test(convId)) {
+              await hybridChatService.updateConversation(convId, {
+                updated_at: new Date().toISOString(),
+                last_message_at: new Date().toISOString()
+              });
+            }
+          } catch (_) {}
+          await sendMessageToLiveAgent(questionToSend);
+        } else {
+          // Use workforce agent for real responses
+          // Promote this conversation to Today top immediately in the sidebar
+          try {
+            const convId = hybridChatService.getCurrentConversationId() || currentThread?.id;
+            if (addConversationImmediateRef?.current?.promoteToTodayTop && convId) {
+              addConversationImmediateRef.current.promoteToTodayTop(convId);
+            }
+            // Update backend timestamps so fetch returns it under Today and at the top
+            if (convId && !/^thread_\d+/.test(convId)) {
+              await hybridChatService.updateConversation(convId, {
+                updated_at: new Date().toISOString(),
+                last_message_at: new Date().toISOString()
+              });
+            }
+          } catch (_) {}
+          await sendWorkforceAgentMessage(questionToSend);
+        }
+      } finally {
+        // Clear flag after send is complete
+        window.__sendInProgress = false;
+        console.log('✅ [DEBUG] Send completed, setting __sendInProgress=false');
+        
+        // Mark that predefined question has been sent to stop input restoration
+        if (urlType === 'predefined') {
+          window.__predefinedQuestionSent = true;
+          console.log('✅ [DEBUG] Marked predefined question as sent');
+          
+          // Prevent auto-load for 10 seconds after predefined send
+          setTimeout(() => {
+            window.__predefinedQuestionSent = false;
+            console.log('🔄 [DEBUG] Reset predefined question sent flag after timeout');
+          }, 10000);
+        }
       }
     }
   };
@@ -4968,7 +5100,10 @@ const ChatPage = ({ onBack, userQuestion, onToggleTheme, isDarkMode, currentThre
                 type="text"
                 placeholder={isInputFocused ? "" : "Ask anything"}
                 value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
+                onChange={(e) => {
+                  console.log('✏️ [DEBUG] User typing in input', { newValue: e.target.value, oldValue: userInput });
+                  setUserInput(e.target.value);
+                }}
                 onKeyPress={handleKeyPress}
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basic iframe Integration (No Enhanced Support)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .iframe-container {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        iframe {
+            width: 100%;
+            height: 300px;
+            border: none;
+            display: block;
+        }
+        .info {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Basic iframe Integration Demo</h1>
+            <p>This page demonstrates the basic iframe integration without enhanced dropdown support.</p>
+        </div>
+        
+        <div class="iframe-container">
+            <iframe 
+                src="http://localhost:3002/pulseembedded" 
+                title="Pulse Embedded Search"
+                id="basicIframe">
+            </iframe>
+        </div>
+        
+        <div class="info">
+            <h3>What You'll See:</h3>
+            <ul>
+                <li><strong>Reduced dropdown count:</strong> Only 2 suggestions instead of 6</li>
+                <li><strong>Compact design:</strong> Smaller dropdown that fits within iframe</li>
+                <li><strong>No breakout required:</strong> Everything contained within iframe boundaries</li>
+                <li><strong>Full functionality:</strong> All search features work seamlessly</li>
+            </ul>
+            <p><strong>Note:</strong> This page intentionally does NOT include the enhanced integration code, so you can see the automatic fallback behavior.</p>
+        </div>
+    </div>
+
+    <!-- No enhanced integration JavaScript - showing fallback behavior -->
+    <script>
+        console.log('📱 Basic iframe integration - no enhanced dropdown support');
+        console.log('🔧 The iframe will automatically use compact internal dropdown');
+    </script>
+</body>
+</html>

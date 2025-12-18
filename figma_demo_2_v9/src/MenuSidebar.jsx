@@ -22,6 +22,34 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
   const searchInputRef = useRef(null);
   // Map of threadId -> DOM element to auto-scroll into view when active changes
   const threadItemRefs = useRef(new Map());
+  const pendingTitleUpdatesRef = useRef(new Map());
+  const activeThreadRef = useRef(currentActiveThread);
+
+  const isPlaceholderThreadId = (threadId) =>
+    typeof threadId === 'string' && (threadId.startsWith('thread_') || threadId.startsWith('local_'));
+
+  const getPendingTitleEntry = (threadId) => {
+    const entry = pendingTitleUpdatesRef.current.get(threadId);
+    if (!entry) return null;
+    if (typeof entry === 'string') {
+      return { title: entry, lastAttempt: 0 };
+    }
+    return entry;
+  };
+
+  const setPendingTitleEntry = (threadId, title, lastAttempt = 0) => {
+    if (!threadId || !title) return;
+    pendingTitleUpdatesRef.current.set(threadId, { title, lastAttempt });
+  };
+
+  const clearPendingTitleEntry = (threadId) => {
+    if (!threadId) return;
+    pendingTitleUpdatesRef.current.delete(threadId);
+  };
+
+  useEffect(() => {
+    activeThreadRef.current = currentActiveThread;
+  }, [currentActiveThread]);
 
   // Auto-scroll the sidebar so the highlighted thread is visible when selection changes
   useEffect(() => {
@@ -264,13 +292,25 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
 
   // Function to update the conversation ID (for when frontend temp ID becomes backend ID)
   const updateConversationId = (oldId, newId) => {
+    if (!oldId || !newId || oldId === newId) return;
+
+  const pendingEntry = getPendingTitleEntry(oldId);
+  const pendingTitle = pendingEntry?.title;
+
     setAllThreads(prev => {
       const updateThreads = (threads) => 
-        threads.map(thread => 
-          thread.id === oldId 
-            ? { ...thread, id: newId, updated_at: new Date().toISOString() }
-            : thread
-        );
+        threads.map(thread => {
+          if (thread.id !== oldId) return thread;
+          const updatedThread = {
+            ...thread,
+            id: newId,
+            updated_at: new Date().toISOString()
+          };
+          if (pendingTitle) {
+            updatedThread.title = pendingTitle;
+          }
+          return updatedThread;
+        });
 
       const result = {
         today: updateThreads(prev.today),
@@ -282,6 +322,57 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
       console.log('✅ Updated conversation ID in sidebar:', { oldId, newId });
       return result;
     });
+
+    if (currentActiveThread?.id === oldId && onThreadUpdate) {
+      onThreadUpdate({ ...currentActiveThread, id: newId, ...(pendingTitle ? { title: pendingTitle } : {}) });
+    }
+
+    if (pendingTitle) {
+      clearPendingTitleEntry(oldId);
+
+      try {
+        localConversationManager.updateConversationTitle(newId, pendingTitle);
+      } catch (localError) {
+        console.warn('⚠️ Failed to migrate pending title to new ID in local storage:', localError);
+      }
+
+      setAllThreads(prev => {
+        const applyTitle = (threads) =>
+          threads.map(thread =>
+            thread.id === newId ? { ...thread, title: pendingTitle } : thread
+          );
+        return {
+          today: applyTitle(prev.today || []),
+          yesterday: applyTitle(prev.yesterday || []),
+          lastWeek: applyTitle(prev.lastWeek || []),
+          last30Days: applyTitle(prev.last30Days || [])
+        };
+      });
+
+      (async () => {
+        try {
+          const oktaUser = JSON.parse(localStorage.getItem('userInfo') || '{}');
+          const domainId = oktaUser.domainId || oktaUser.domain_id || null;
+          if (!domainId) {
+            console.warn('⚠️ No domainId; pending title update will retry when backend ID refreshes');
+            setPendingTitleEntry(newId, pendingTitle, Date.now());
+            return;
+          }
+          hybridChatService.setUserId(domainId);
+          const result = await hybridChatService.updateConversation(newId, { title: pendingTitle });
+          if (result && result.success === false) {
+            console.warn('⚠️ Pending backend title update reported failure:', result);
+            setPendingTitleEntry(newId, pendingTitle, Date.now());
+          } else {
+            clearPendingTitleEntry(newId);
+            console.log('✅ Applied deferred title update to backend:', pendingTitle);
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to apply deferred title update to backend:', error);
+          setPendingTitleEntry(newId, pendingTitle, Date.now());
+        }
+      })();
+    }
   };
 
   // Promote a conversation to the top of Today's category
@@ -348,20 +439,72 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         
         // Validate the threads structure and ensure it has the required properties
         if (threads && typeof threads === 'object') {
-          setAllThreads({
-            today: Array.isArray(threads.today) ? threads.today : [],
-            yesterday: Array.isArray(threads.yesterday) ? threads.yesterday : [],
-            lastWeek: Array.isArray(threads.lastWeek) ? threads.lastWeek : [],
-            last30Days: Array.isArray(threads.last30Days) ? threads.last30Days : []
+          // Merge API threads with existing manually-managed threads (like "New Chat")
+          setAllThreads(prev => {
+            const mergeThreads = (apiThreads, existingThreads) => {
+              const apiIds = new Set(apiThreads.map(t => t.id));
+
+              // Keep manually-added threads that aren't in the API response
+              const manualThreads = existingThreads.filter(t => t && !apiIds.has(t.id));
+
+              // Preserve ordering of existing manual threads but ensure placeholder "thread_" IDs stay on top
+              const placeholderManual = manualThreads.filter(t => t?.id?.startsWith('thread_'));
+              const otherManual = manualThreads.filter(t => !t?.id?.startsWith('thread_'));
+
+              // Combine with manual placeholders first so "New Chat" remains visible until persisted
+              const combined = [...placeholderManual, ...apiThreads, ...otherManual];
+
+              // Remove duplicates based on ID, keeping the first occurrence (manual placeholder wins)
+              const seen = new Set();
+              const deduped = combined.filter(thread => {
+                if (!thread || seen.has(thread.id)) {
+                  return false;
+                }
+                seen.add(thread.id);
+                return true;
+              });
+
+              if (placeholderManual.length > 0) {
+                console.log('📌 Preserving placeholder threads during merge:', placeholderManual.map(t => t.id));
+              }
+
+              return deduped;
+            };
+
+            return {
+              today: mergeThreads(
+                Array.isArray(threads.today) ? threads.today : [], 
+                Array.isArray(prev.today) ? prev.today : []
+              ),
+              yesterday: mergeThreads(
+                Array.isArray(threads.yesterday) ? threads.yesterday : [], 
+                Array.isArray(prev.yesterday) ? prev.yesterday : []
+              ),
+              lastWeek: mergeThreads(
+                Array.isArray(threads.lastWeek) ? threads.lastWeek : [], 
+                Array.isArray(prev.lastWeek) ? prev.lastWeek : []
+              ),
+              last30Days: mergeThreads(
+                Array.isArray(threads.last30Days) ? threads.last30Days : [], 
+                Array.isArray(prev.last30Days) ? prev.last30Days : []
+              )
+            };
           });
           // Auto-select the first available conversation on initial load if none is active
           try {
-            if (!currentActiveThread || !currentActiveThread.id) {
+            const activeThread = activeThreadRef.current;
+            if (!activeThread || !activeThread.id) {
+              // Check if we should prevent auto-thread selection (e.g., after new chat creation)
+              if (window.__preventAutoThreadSelect) {
+                console.log('🚫 MenuSidebar: Prevented auto-thread selection due to recent new chat creation');
+                return;
+              }
+              
               const first = (threads.today && threads.today[0])
                 || (threads.yesterday && threads.yesterday[0])
                 || (threads.lastWeek && threads.lastWeek[0])
                 || (threads.last30Days && threads.last30Days[0]);
-              if (first && onThreadSelect) {
+              if (first && first.id && first.id !== activeThread?.id && onThreadSelect) {
                 onThreadSelect(first);
               }
             }
@@ -546,15 +689,55 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
     const refreshThreads = async () => {
       try {
         const threads = await loadThreadsFromStorage();
-        setAllThreads(threads);
+        // Merge API threads with existing manually-managed threads
+        setAllThreads(prev => {
+          const mergeThreads = (apiThreads, existingThreads) => {
+            const apiIds = new Set((apiThreads || []).map(t => t.id));
+            
+            // Keep manually-added threads that aren't in the API response
+            const manualThreads = (existingThreads || []).filter(t => !apiIds.has(t.id));
+            
+            // Combine API threads with manual threads, prioritizing API data for matching IDs
+            const combined = [...(apiThreads || []), ...manualThreads];
+            
+            // Remove duplicates based on ID, keeping the first occurrence (API data wins)
+            const seen = new Set();
+            const deduped = combined.filter(thread => {
+              if (seen.has(thread.id)) {
+                return false;
+              }
+              seen.add(thread.id);
+              return true;
+            });
+            
+            return deduped;
+          };
+
+          const safeThreads = threads || {};
+          const safePrev = prev || { today: [], yesterday: [], lastWeek: [], last30Days: [] };
+          
+          return {
+            today: mergeThreads(safeThreads.today, safePrev.today),
+            yesterday: mergeThreads(safeThreads.yesterday, safePrev.yesterday),
+            lastWeek: mergeThreads(safeThreads.lastWeek, safePrev.lastWeek),
+            last30Days: mergeThreads(safeThreads.last30Days, safePrev.last30Days)
+          };
+        });
         // Auto-select the first available conversation on refresh if none is active
         try {
-          if (!currentActiveThread || !currentActiveThread.id) {
+          const activeThread = activeThreadRef.current;
+          if (!activeThread || !activeThread.id) {
+            // Check if we should prevent auto-thread selection (e.g., after new chat creation)
+            if (window.__preventAutoThreadSelect) {
+              console.log('🚫 MenuSidebar: Prevented auto-thread selection on refresh due to recent new chat creation');
+              return;
+            }
+            
             const first = (threads.today && threads.today[0])
               || (threads.yesterday && threads.yesterday[0])
               || (threads.lastWeek && threads.lastWeek[0])
               || (threads.last30Days && threads.last30Days[0]);
-            if (first && onThreadSelect) {
+            if (first && first.id && first.id !== activeThread?.id && onThreadSelect) {
               onThreadSelect(first);
             }
           }
@@ -575,11 +758,54 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
       // clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    const entries = Array.from(pendingTitleUpdatesRef.current.entries());
+    if (!entries.length) return;
+
+    entries.forEach(([id, rawEntry]) => {
+      const normalized = typeof rawEntry === 'string' ? { title: rawEntry, lastAttempt: 0 } : rawEntry;
+      if (!normalized?.title) return;
+      if (isPlaceholderThreadId(id)) return;
+
+      const now = Date.now();
+      const lastAttempt = normalized.lastAttempt || 0;
+      const RETRY_WINDOW_MS = 4000;
+      if (now - lastAttempt < RETRY_WINDOW_MS) return;
+
+      setPendingTitleEntry(id, normalized.title, now);
+
+      (async () => {
+        try {
+          const oktaUser = JSON.parse(localStorage.getItem('userInfo') || '{}');
+          const domainId = oktaUser.domainId || oktaUser.domain_id || null;
+          if (!domainId) {
+            console.warn('⚠️ Deferred rename retry skipped - missing domainId');
+            return;
+          }
+
+          hybridChatService.setUserId(domainId);
+          const result = await hybridChatService.updateConversation(id, { title: normalized.title });
+          if (result && result.success === false) {
+            console.warn('⚠️ Deferred rename retry reported failure:', result);
+            setPendingTitleEntry(id, normalized.title, Date.now());
+          } else {
+            clearPendingTitleEntry(id);
+            console.log('✅ Deferred rename applied successfully for conversation:', id);
+          }
+        } catch (retryError) {
+          console.warn('⚠️ Deferred rename retry failed:', retryError);
+          setPendingTitleEntry(id, normalized.title, Date.now());
+        }
+      })();
+    });
+  }, [allThreads]);
   
   // Handle thread rename
   const handleRenameThread = async (threadId, newTitle) => {
     try {
       console.log('🔄 Attempting to rename thread:', threadId, 'to:', newTitle);
+      const isPlaceholder = isPlaceholderThreadId(threadId);
       
       // 1. 🚀 IMMEDIATE UI UPDATE - Update the title in the current threads state immediately
       setAllThreads(prevThreads => {
@@ -616,28 +842,41 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         console.log('✅ Current thread title updated in ChatPage:', newTitle);
       }
 
+      if (isPlaceholder) {
+        setPendingTitleEntry(threadId, newTitle);
+        console.log('📝 Stored pending title update for placeholder thread:', threadId);
+      } else {
+        clearPendingTitleEntry(threadId);
+      }
+
       // 3. 🌐 BACKGROUND API CALL - Update backend without blocking UI
-      try {
-        const oktaUser = JSON.parse(localStorage.getItem('userInfo') || '{}');
-        const domainId = oktaUser.domainId || oktaUser.domain_id || null;
-        if (!domainId) {
-          console.warn('⚠️ No domainId; skip backend rename update');
-          return;
+      if (!isPlaceholder) {
+        try {
+          const oktaUser = JSON.parse(localStorage.getItem('userInfo') || '{}');
+          const domainId = oktaUser.domainId || oktaUser.domain_id || null;
+          if (!domainId) {
+            console.warn('⚠️ No domainId; skip backend rename update');
+            setPendingTitleEntry(threadId, newTitle, Date.now());
+          } else {
+            hybridChatService.setUserId(domainId);
+
+            const result = await hybridChatService.updateConversation(threadId, { 
+              title: newTitle 
+            });
+            
+            if (result && result.success !== false) {
+              console.log('✅ Backend API updated with new title:', newTitle);
+              clearPendingTitleEntry(threadId);
+            } else {
+              console.warn('⚠️ Backend API update failed, but UI and local storage already updated:', result);
+              setPendingTitleEntry(threadId, newTitle, Date.now());
+            }
+          }
+        } catch (apiError) {
+          console.error('❌ Backend API update failed, but UI and local storage already updated:', apiError);
+          setPendingTitleEntry(threadId, newTitle, Date.now());
+          // Don't show error to user since UI is already updated
         }
-        hybridChatService.setUserId(domainId);
-        
-        const result = await hybridChatService.updateConversation(threadId, { 
-          title: newTitle 
-        });
-        
-        if (result && result.success !== false) {
-          console.log('✅ Backend API updated with new title:', newTitle);
-        } else {
-          console.warn('⚠️ Backend API update failed, but UI and local storage already updated:', result);
-        }
-      } catch (apiError) {
-        console.error('❌ Backend API update failed, but UI and local storage already updated:', apiError);
-        // Don't show error to user since UI is already updated
       }
       
     } catch (error) {
@@ -694,6 +933,12 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
       });
       console.log('✅ Thread removed from frontend UI permanently:', threadId);
 
+      try {
+        localConversationManager.deleteConversation(threadId);
+      } catch (localDeleteError) {
+        console.warn('⚠️ Failed to remove conversation from local storage:', localDeleteError);
+      }
+
       // If the deleted thread was the active one, choose fallback
       if (currentActiveThread && currentActiveThread.id === threadId) {
         try { hybridChatService.clearActiveConversation(); } catch {}
@@ -708,10 +953,12 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
         }
       }
       
-      // Call delete API in background - don't block frontend deletion and don't care about result
-      hybridChatService.deleteConversation(threadId).then(() => {
-        console.log('🗑️ Background API delete completed for:', threadId);
-        // Force refresh the conversation list after successful deletion
+      // Call delete API and react based on result
+  const deleteResult = await hybridChatService.deleteConversation(threadId);
+  const backendSuccess = deleteResult ? deleteResult.backendSuccess !== false : false;
+
+      if (backendSuccess && !deleteResult?.skippedBackend) {
+        console.log('🗑️ Backend confirmed delete for:', threadId);
         setTimeout(() => {
           loadThreadsFromStorage().then(refreshedThreads => {
             if (refreshedThreads) {
@@ -721,13 +968,16 @@ const MenuSidebar = ({ onBack, onToggleTheme, isDarkMode, onNewChat, onThreadSel
           }).catch(error => {
             console.warn('⚠️ Failed to refresh conversation list after deletion:', error);
           });
-        }, 500); // Small delay to ensure backend processing is complete
-      }).catch((error) => {
-        console.log('⚠️ Background API delete failed for:', threadId, error.message);
-      });
+        }, 500);
+      } else if (!backendSuccess) {
+        console.warn('⚠️ Backend delete failed; restoring conversations from server state');
+        const refreshedThreads = await loadThreadsFromStorage();
+        if (refreshedThreads) {
+          setAllThreads(refreshedThreads);
+        }
+      }
       
-  // DO NOT refresh entire list immediately to avoid flicker; targeted refetch happens above
-  console.log('🔒 Skipped full list refresh to prevent deleted items reappearing');
+      console.log('🔒 Skipped immediate full list refresh to prevent flicker');
       
     } catch (error) {
       console.log('⚠️ Delete operation had issues but frontend deletion completed:', error.message);

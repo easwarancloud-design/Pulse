@@ -437,7 +437,7 @@ export class HybridChatService {
    */
   async updateConversation(conversationId, updates) {
     try {
-      // Skip API call for local conversations
+      // Skip API call for local-only or placeholder conversations
       if (conversationId && conversationId.startsWith('local_')) {
         return { 
           id: conversationId, 
@@ -445,6 +445,18 @@ export class HybridChatService {
           local: true,
           updated_at: new Date().toISOString(),
           success: true
+        };
+      }
+
+      if (conversationId && /^thread_\d+/.test(conversationId)) {
+        console.warn('⚠️ Skipping conversation update for placeholder thread ID:', conversationId);
+        return {
+          id: conversationId,
+          ...updates,
+          placeholder: true,
+          updated_at: new Date().toISOString(),
+          success: false,
+          message: 'Placeholder thread ID - update skipped'
         };
       }
 
@@ -583,25 +595,33 @@ export class HybridChatService {
         conversationCacheService.clearUserCache(this.currentUserId);
       }
 
-      // Call backend API in background - don't wait for response or handle failures
-      // Frontend deletion should succeed regardless of backend status
-      setTimeout(async () => {
-        try {
-          if (!conversationId.startsWith('local_')) {
-            await conversationStorage.deleteConversation(conversationId);
-            console.log(`✅ Backend delete successful for ${conversationId}`);
-          }
-        } catch (error) {
-          console.log(`⚠️ Backend delete failed for ${conversationId}, but frontend deletion completed:`, error.message);
+      const isPlaceholder = typeof conversationId === 'string' && (conversationId.startsWith('local_') || conversationId.startsWith('thread_'));
+
+      if (isPlaceholder) {
+        console.log(`ℹ️ Skipping backend delete for placeholder conversation ${conversationId}`);
+        return { frontendSuccess: true, backendSuccess: true, skippedBackend: true };
+      }
+
+      let backendSuccess = true;
+      try {
+        const apiResult = await conversationStorage.deleteConversation(conversationId);
+        backendSuccess = !!(apiResult && apiResult.success !== false);
+        if (backendSuccess) {
+          console.log(`✅ Backend delete successful for ${conversationId}`);
+        } else {
+          console.warn(`⚠️ Backend delete reported failure for ${conversationId}:`, apiResult);
         }
-      }, 100);
+      } catch (error) {
+        backendSuccess = false;
+        console.log(`⚠️ Backend delete failed for ${conversationId}, but frontend deletion completed:`, error.message || error);
+      }
 
       console.log(`✅ Frontend deletion completed for conversation ${conversationId}`);
-      return true;
+      return { frontendSuccess: true, backendSuccess };
       
     } catch (error) {
       console.error(`❌ HYBRID: Frontend delete failed for ${conversationId}:`, error);
-      return false;
+      return { frontendSuccess: false, backendSuccess: false, error: error.message };
     }
   }
 }

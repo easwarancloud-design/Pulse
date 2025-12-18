@@ -5,6 +5,10 @@
 
 const TITLE_API_URL = 'https://workforceagent.elevancehealth.com/api/generate_title';
 
+// Cache to prevent duplicate API calls for the same query
+const titleCache = new Map();
+const CACHE_DURATION = 5000; // 5 seconds
+
 /**
  * Generate a conversation title from the user's question using API
  * Falls back to first 50 characters if API fails
@@ -17,6 +21,18 @@ export async function generateConversationTitle(userQuery, domainId) {
   if (!domainId) {
     console.warn('⚠️ generateConversationTitle called without domainId; proceeding with fallback-only');
   }
+  
+  // Create cache key from query
+  const cacheKey = userQuery.trim().toLowerCase();
+  const now = Date.now();
+  
+  // Check cache first
+  const cached = titleCache.get(cacheKey);
+  if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+    console.log('📋 [DEBUG] Using cached title for query');
+    return cached.title;
+  }
+  
   // Fallback title (first 50 chars)
   const fallbackTitle = userQuery.length > 50 
     ? userQuery.substring(0, 50) + '...' 
@@ -62,16 +78,38 @@ export async function generateConversationTitle(userQuery, domainId) {
 
     // Validate the generated title
     if (generatedTitle && generatedTitle.trim().length > 0) {
-      console.log('✅ Successfully generated title via API:', generatedTitle);
-      return generatedTitle.trim();
+      const finalTitle = generatedTitle.trim();
+      console.log('✅ Successfully generated title via API:', finalTitle);
+      
+      // Cache the result
+      titleCache.set(cacheKey, {
+        title: finalTitle,
+        timestamp: now
+      });
+      
+      return finalTitle;
     } else {
       console.warn('⚠️ API returned empty title, using fallback');
+      
+      // Cache the fallback too
+      titleCache.set(cacheKey, {
+        title: fallbackTitle,
+        timestamp: now
+      });
+      
       return fallbackTitle;
     }
 
   } catch (error) {
     console.error('❌ Failed to generate title via API:', error.message);
     console.log('🔄 Using fallback title (first 50 chars)');
+    
+    // Cache the fallback in case of error
+    titleCache.set(cacheKey, {
+      title: fallbackTitle,
+      timestamp: now
+    });
+    
     return fallbackTitle;
   }
 }

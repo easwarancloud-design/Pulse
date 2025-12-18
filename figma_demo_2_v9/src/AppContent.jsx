@@ -81,6 +81,7 @@ useEffect(() => {
 
   // Handle URL parameters for result page
   React.useEffect(() => {
+    console.log('🔗 [DEBUG] URL effect triggered', { pathname: location.pathname, search: location.search });
     // 🧹 Clean up old local storage on app start
     localConversationManager.cleanupOldConversations();
 
@@ -100,14 +101,36 @@ useEffect(() => {
       } catch (_) {}
 
       if (query) {
+        console.log('🎯 [DEBUG] AppContent URL handler triggered', { query, conversationId, type });
         if (conversationId) {
           // Load existing conversation by ID
+          console.log('📂 [DEBUG] Loading existing conversation', conversationId);
           loadExistingConversation(conversationId);
         } else if (type === 'predefined') {
           // Predefined question - create new chat with question in input field
+          console.log('🆕 [DEBUG] Creating new chat for predefined question', { query, type });
+          
+          // Prevent duplicate thread creation from React StrictMode
+          if (window.__predefinedThreadCreating) {
+            console.log('🚫 [DEBUG] Skipping duplicate thread creation (React StrictMode)');
+            return;
+          }
+          window.__predefinedThreadCreating = true;
+          
+          // Clear flag for new predefined flow
+          window.__predefinedQuestionSent = false;
+          console.log('🔄 [DEBUG] Reset predefined question sent flag');
+          
           setUserQuestion(query);
           setIsNewChat(true);
           setIsNewChatActive(true);
+
+          // Reset any previously active backend conversation to avoid accidental hydration of old threads
+          try {
+            if (hybridChatService && typeof hybridChatService.clearActiveConversation === 'function') {
+              hybridChatService.clearActiveConversation();
+            }
+          } catch (_) {}
 
           const newThread = {
             id: 'thread_' + Date.now(),
@@ -115,6 +138,37 @@ useEffect(() => {
             conversation: []
           };
           setCurrentThread(newThread);
+          // Immediately add to sidebar so it appears at the top under today's category
+          try {
+            if (addConversationImmediateRef.current) {
+              console.log('📍 [DEBUG] Adding new chat to sidebar', newThread.id);
+              addConversationImmediateRef.current.addConversation(newThread.id, 'New Chat');
+            } else {
+              console.warn('⚠️ [DEBUG] addConversationImmediateRef.current is null');
+            }
+          } catch (e) {
+            console.error('❌ [DEBUG] Failed to add to sidebar', e);
+          }
+          
+          // Immediately clear URL params to prevent re-triggering of this effect
+          try {
+            if (window && window.history && typeof window.history.replaceState === 'function') {
+              window.history.replaceState({}, document.title, window.location.pathname);
+              console.log('🧹 [DEBUG] Cleared URL params for predefined question');
+            }
+          } catch (_) {}
+          
+          // Clear the thread creation guard after successful creation
+          setTimeout(() => {
+            window.__predefinedThreadCreating = false;
+            console.log('✅ [DEBUG] Cleared thread creation guard');
+          }, 100);
+          
+          // Prevent auto-loading of first conversation when sidebar loads by setting a flag
+          window.__preventAutoThreadSelect = true;
+          setTimeout(() => {
+            window.__preventAutoThreadSelect = false;
+          }, 2000); // Clear flag after 2 seconds
         } else if (type === 'manual') {
           // Manual input coming from embedded/main page.
           // Root cause of duplication: we previously pre-populated the thread with the user message AND
@@ -140,28 +194,44 @@ useEffect(() => {
               window.history.replaceState({}, document.title, window.location.pathname);
             }
           } catch (_) {}
+        } else {
+          console.log('🤔 [DEBUG] Query present but no specific type/conversationId', { query, type, conversationId });
         }
+      } else {
+        console.log('📭 [DEBUG] No query in URL params');
       }
+    } else {
+      console.log('📍 [DEBUG] Not on resultpage, pathname:', location.pathname);
     }
   }, [location]);
 
   // Auto-load first conversation on page refresh/initialization
   useEffect(() => {
     const autoLoadFirstConversation = async () => {
+      const params = new URLSearchParams(location.search);
+      const hasQuery = params.has('query');
+      const hasPredefinedType = params.get('type') === 'predefined';
+      
       console.log('🔍 Auto-load check:', {
         pathname: location.pathname,
         currentThread: !!currentThread,
         search: location.search,
         isNewChat,
-        isNewChatActive
+        isNewChatActive,
+        hasQuery,
+        hasPredefinedType
       });
 
-      // Only auto-load if we're on resultpage, have no current thread, and no URL params
+      // Only auto-load if we're on resultpage, have no current thread, no URL params, and NOT in predefined flow
+      // Also skip if a predefined question was recently sent
       if (location.pathname === '/resultpage' &&
           !currentThread &&
           !location.search &&
           !isNewChat &&
-          !isNewChatActive) {
+          !isNewChatActive &&
+          !hasQuery &&
+          !hasPredefinedType &&
+          !window.__predefinedQuestionSent) {
 
         console.log('✅ Conditions met, attempting to auto-load first conversation');
 
@@ -184,6 +254,12 @@ useEffect(() => {
           if (conversations && conversations.length > 0) {
             const firstConversation = conversations[0];
             console.log('🔄 Auto-loading first conversation on page refresh:', firstConversation.title);
+
+            // Check if we should prevent auto-thread selection (e.g., after new chat creation)
+            if (window.__preventAutoThreadSelect) {
+              console.log('🚫 Prevented auto-thread selection due to recent new chat creation');
+              return;
+            }
 
             // Load the first conversation using the existing handleThreadSelect logic
             await handleThreadSelect(firstConversation);
